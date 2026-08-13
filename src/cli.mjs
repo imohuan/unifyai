@@ -28,9 +28,9 @@ const ADAPTERS = {
 const program = new Command();
 
 program
-  .name('ai-sync')
+  .name('unifyai')
   .description('同步 AI 配置到多个平台')
-  .version('1.0.0');
+  .version('1.0.2', '-v, --version', '显示版本号');
 
 program
   .option('--all', '同步到所有平台')
@@ -41,7 +41,7 @@ program
   .option('--source <path>', '源配置文件路径', path.join(os.homedir(), '.opencodex', 'config.json'))
   .option('--list-platforms', '列出支持的平台')
   .option('--update-metadata', '更新元数据缓存（从 OpenRouter 获取）')
-  .option('-v, --verbose', '显示详细信息')
+  .option('--verbose', '显示详细信息')
   .action(async (options) => {
     try {
       // 列出支持的平台
