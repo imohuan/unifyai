@@ -107,8 +107,8 @@ export class ConfigLoader {
         // 从 API 返回的数据中提取（如果有）
         contextWindow: m.context_length || null,
         maxOutputTokens: m.max_tokens || null,
-        supportsVision: false, // 需要进一步检测
-        supportsThinking: false, // 需要进一步检测
+        supportsVision: null, // 由 metadata-fetcher 从 OpenRouter 获取
+        supportsThinking: null, // 由 metadata-fetcher 从 OpenRouter 获取
         supportsFunctionCalling: true,
         inputModalities: ['text'],
         // 保留原始数据

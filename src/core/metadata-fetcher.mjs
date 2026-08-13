@@ -28,26 +28,37 @@ export class MetadataFetcher {
     const orModels = await this.getOpenRouterModels();
 
     for (const model of models) {
-      // 如果已有完整元数据，跳过
-      if (model.contextWindow && model.maxOutputTokens) {
-        continue;
-      }
-
       // 从 OpenRouter 查找元数据
       const metadata = this.findInOpenRouter(model.modelId, orModels);
 
       if (metadata) {
-        // 合并元数据（优先使用已有的）
-        model.contextWindow = model.contextWindow || metadata.context;
-        model.maxOutputTokens = model.maxOutputTokens || metadata.output;
-        model.supportsVision = model.supportsVision ?? metadata.vision;
-        model.supportsThinking = model.supportsThinking ?? metadata.reasoning;
+        // 合并元数据（只在未设置时使用 OpenRouter 数据）
+        if (model.contextWindow == null) {
+          model.contextWindow = metadata.context;
+        }
+        if (model.maxOutputTokens == null) {
+          model.maxOutputTokens = metadata.output;
+        }
+        if (model.supportsVision == null) {
+          model.supportsVision = metadata.vision;
+        }
+        if (model.supportsThinking == null) {
+          model.supportsThinking = metadata.reasoning;
+        }
       } else {
-        // 使用默认值
-        model.contextWindow = model.contextWindow || 200000;
-        model.maxOutputTokens = model.maxOutputTokens || 32000;
-        model.supportsVision = model.supportsVision ?? false;
-        model.supportsThinking = model.supportsThinking ?? false;
+        // 使用默认值（只在未设置时）
+        if (model.contextWindow == null) {
+          model.contextWindow = 200000;
+        }
+        if (model.maxOutputTokens == null) {
+          model.maxOutputTokens = 32000;
+        }
+        if (model.supportsVision == null) {
+          model.supportsVision = false;
+        }
+        if (model.supportsThinking == null) {
+          model.supportsThinking = false;
+        }
       }
     }
 
