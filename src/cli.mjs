@@ -14,13 +14,15 @@ import { OpenCodeAdapter } from './adapters/opencode-adapter.mjs';
 import { CodexAdapter } from './adapters/codex-adapter.mjs';
 import { ClaudeCodeAdapter } from './adapters/claude-code-adapter.mjs';
 import { ReasonixAdapter } from './adapters/reasonix-adapter.mjs';
+import { PenguinAdapter } from './adapters/penguin-adapter.mjs';
 
 // 可用的适配器
 const ADAPTERS = {
   opencode: OpenCodeAdapter,
   codex: CodexAdapter,
   claudecode: ClaudeCodeAdapter,
-  reasonix: ReasonixAdapter
+  reasonix: ReasonixAdapter,
+  penguin: PenguinAdapter
 };
 
 const program = new Command();
@@ -32,7 +34,7 @@ program
 
 program
   .option('--all', '同步到所有平台')
-  .option('--platforms <list>', '指定平台（逗号分隔）', 'opencode,codex,claudecode,reasonix')
+  .option('--platforms <list>', '指定平台（逗号分隔）', 'opencode,codex,claudecode,reasonix,penguin')
   .option('--models-only', '仅同步模型配置')
   .option('--mcp-only', '仅同步 MCP 配置')
   .option('--dry-run', '预览模式，不实际写入')
@@ -69,8 +71,10 @@ program
       console.log(`📂 加载配置: ${options.source}`);
       const config = await ConfigLoader.load(options.source);
 
-      // 标准化 MCP 配置
-      const mcpServers = ConfigLoader.normalizeMcp(config.mcp);
+      // 标准化 MCP 配置（config.mcp 格式：{ mcpServers: {...} }）
+      const mcpServers = config.mcp?.mcpServers 
+        ? ConfigLoader.normalizeMcp(config.mcp.mcpServers)
+        : {};
 
       // 增强模型元数据
       if (!options.mcpOnly && config.models.length > 0) {
