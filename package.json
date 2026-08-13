@@ -1,6 +1,6 @@
 {
   "name": "unifyai",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Unified AI configuration sync tool for multiple AI development platforms",
   "type": "module",
   "main": "src/cli.mjs",

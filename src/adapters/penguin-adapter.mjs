@@ -80,7 +80,10 @@ export class PenguinAdapter extends BaseAdapter {
           newLines.push(`max_tokens = ${model.maxOutputTokens}`);
         }
         
-        if (model.inputModalities && !model.inputModalities.includes('image')) {
+        // 显式声明 vision 支持（使用增强后的 supportsVision 字段）
+        if (model.supportsVision) {
+          newLines.push('vision = true');
+        } else {
           newLines.push('vision = false');
         }
 
