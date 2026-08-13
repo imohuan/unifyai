@@ -21,7 +21,6 @@ const ADAPTERS = {
   codex: CodexAdapter,
   claudecode: ClaudeCodeAdapter,
   reasonix: ReasonixAdapter
-  // penguin: PenguinAdapter // 待实现
 };
 
 const program = new Command();
@@ -66,7 +65,7 @@ program
 
       console.log('\n🚀 AI Config Sync - 配置同步工具\n');
 
-      // 加载源配置
+      // 加载源配置（从每个 provider 获取模型列表）
       console.log(`📂 加载配置: ${options.source}`);
       const config = await ConfigLoader.load(options.source);
 
@@ -74,10 +73,35 @@ program
       const mcpServers = ConfigLoader.normalizeMcp(config.mcp);
 
       // 增强模型元数据
-      if (!options.mcpOnly) {
-        console.log('🔍 增强模型元数据...');
+      if (!options.mcpOnly && config.models.length > 0) {
+        console.log('\n🔍 增强模型元数据...');
         config.models = await MetadataFetcher.enrich(config.models);
         console.log(`✓ ${config.models.length} 个模型元数据已增强`);
+      }
+
+      // 显示模型列表
+      if (config.models.length > 0 && !options.mcpOnly) {
+        console.log('\n📋 模型列表:');
+        const grouped = {};
+        for (const model of config.models) {
+          if (!grouped[model.provider]) {
+            grouped[model.provider] = [];
+          }
+          grouped[model.provider].push(model);
+        }
+        
+        for (const [provider, models] of Object.entries(grouped)) {
+          console.log(`\n  ${provider} (${models.length} 个模型):`);
+          for (const model of models.slice(0, 10)) {
+            const reasoning = model.supportsThinking ? '🧠' : '  ';
+            const vision = model.supportsVision ? '👁️' : '  ';
+            const ctx = model.contextWindow ? `${(model.contextWindow/1000).toFixed(0)}K` : '???';
+            console.log(`    ${reasoning}${vision} ${model.modelId.padEnd(35)} [${ctx.padStart(6)}]`);
+          }
+          if (models.length > 10) {
+            console.log(`    ... 还有 ${models.length - 10} 个模型`);
+          }
+        }
       }
 
       // 选择平台

@@ -37,21 +37,31 @@ export class OpenCodeAdapter extends BaseAdapter {
 
     const config = this.parseJsonc(raw);
 
-    // 确保 provider 对象存在
-    if (!config.provider) {
-      config.provider = {};
-    }
-
     // 按 SDK 分组模型
     const sdkGroups = this.groupBySdk(models);
 
-    // 更新每个 SDK 组的配置
+    // 收集所有来自同步的 provider keys
+    const syncedProviderKeys = new Set();
     for (const [sdk, group] of Object.entries(sdkGroups)) {
       const providerKey = this.generateProviderKey(group.providerName, sdk);
+      syncedProviderKeys.add(providerKey);
+    }
+
+    // 清空所有模型配置
+    const oldProviderCount = Object.keys(config.provider || {}).length;
+    if (oldProviderCount > 0) {
+      console.log(`    清空旧配置: ${oldProviderCount} 个 provider`);
+    }
+    
+    config.provider = {};
+
+    // 添加新的同步配置
+    for (const [groupKey, group] of Object.entries(sdkGroups)) {
+      const providerKey = this.generateProviderKey(group.providerName, group.sdk);
 
       config.provider[providerKey] = {
         name: group.providerName.toLowerCase(),
-        npm: sdk,
+        npm: group.sdk,
         options: {
           baseURL: group.baseUrl,
           apiKey: group.apiKey
@@ -59,7 +69,7 @@ export class OpenCodeAdapter extends BaseAdapter {
         models: group.models
       };
 
-      console.log(`    • ${providerKey} (${sdk}): ${Object.keys(group.models).length} 个模型`);
+      console.log(`    • ${providerKey} (${group.sdk}): ${Object.keys(group.models).length} 个模型`);
     }
 
     // 写入配置
@@ -165,13 +175,8 @@ export class OpenCodeAdapter extends BaseAdapter {
       groups[groupKey].models[model.modelId] = modelConfig;
     }
 
-    // 转换为 { sdk: group } 格式
-    const result = {};
-    for (const [key, group] of Object.entries(groups)) {
-      result[group.sdk] = group;
-    }
-
-    return result;
+    // 不转换格式，直接返回分组（保留 provider::sdk 作为 key）
+    return groups;
   }
 
   /**

@@ -2,7 +2,7 @@
 
 /**
  * config-loader.mjs
- * 加载 .opencodex/config.json 配置
+ * 加载 .opencodex/config.json 配置并从每个 provider 获取模型列表
  */
 
 import fs from 'node:fs';
@@ -12,7 +12,7 @@ import os from 'node:os';
 export class ConfigLoader {
   /**
    * 加载 opencodex 配置
-   * @param {string} [configPath] - 配置文件路径，默认为 ~/.opencodex/config.json
+   * @param {string} [configPath] - 配置文件路径
    * @returns {Promise<{providers: Object, models: Array, mcp: Object}>}
    */
   static async load(configPath) {
@@ -33,54 +33,28 @@ export class ConfigLoader {
     // 提取 providers
     const providers = config.providers || {};
 
-    // 提取 customModels
-    const customModels = config.customModels || [];
+    console.log(`✓ 加载配置: ${Object.keys(providers).length} 个 provider`);
 
-    // 构建模型列表
+    // 从每个 provider 获取模型列表
     const models = [];
     
     for (const [providerName, providerConfig] of Object.entries(providers)) {
-      // 从 customModels 中找到属于该 provider 的模型
-      const providerModels = customModels.filter(m => m.provider === providerName);
-
-      // 如果没有自定义模型，使用 defaultModel
-      if (providerModels.length === 0 && providerConfig.defaultModel) {
-        models.push({
-          provider: providerName,
-          providerConfig: providerConfig,
-          modelId: providerConfig.defaultModel,
-          displayName: `${providerName}/${providerConfig.defaultModel}`,
-          // 元数据稍后由 MetadataFetcher 补全
-          contextWindow: null,
-          maxOutputTokens: null,
-          supportsVision: false,
-          supportsThinking: false,
-          supportsFunctionCalling: true
-        });
-      }
-
-      for (const model of providerModels) {
-        models.push({
-          provider: providerName,
-          providerConfig: providerConfig,
-          modelId: model.modelId,
-          displayName: model.displayName || `${providerName}/${model.modelId}`,
-          contextWindow: model.contextWindow || null,
-          maxOutputTokens: model.outputLimit || null,
-          supportsVision: model.inputModalities?.includes('image') || false,
-          supportsThinking: false, // 需要从其他地方获取
-          supportsFunctionCalling: true, // 默认支持
-          inputModalities: model.inputModalities || ['text'],
-          // 保留原始数据
-          _raw: model
-        });
+      console.log(`\n📡 获取 ${providerName} 的模型列表...`);
+      
+      const providerModels = await this.fetchProviderModels(providerName, providerConfig);
+      
+      if (providerModels.length > 0) {
+        console.log(`  ✓ 获取到 ${providerModels.length} 个模型`);
+        models.push(...providerModels);
+      } else {
+        console.warn(`  ⚠ ${providerName} 没有返回模型`);
       }
     }
 
     // 提取 MCP 配置（如果有）
     const mcp = config.mcp || {};
 
-    console.log(`✓ 加载配置: ${Object.keys(providers).length} 个 provider, ${models.length} 个模型`);
+    console.log(`\n✓ 总计: ${models.length} 个模型来自 ${Object.keys(providers).length} 个 provider`);
 
     return {
       providers,
@@ -88,6 +62,65 @@ export class ConfigLoader {
       mcp,
       _raw: config
     };
+  }
+
+  /**
+   * 从 provider 的 /v1/models 接口获取模型列表
+   * @param {string} providerName
+   * @param {Object} providerConfig
+   * @returns {Promise<Array>}
+   */
+  static async fetchProviderModels(providerName, providerConfig) {
+    const baseUrl = providerConfig.baseUrl;
+    const apiKey = providerConfig.apiKey;
+
+    if (!baseUrl || !apiKey) {
+      console.warn(`  ⚠ ${providerName} 缺少 baseUrl 或 apiKey`);
+      return [];
+    }
+
+    // 构建 API URL
+    const url = `${baseUrl}/models`;
+
+    try {
+      const response = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        console.warn(`  ⚠ API 请求失败: HTTP ${response.status}`);
+        return [];
+      }
+
+      const data = await response.json();
+      const modelsList = data.data || [];
+
+      // 转换为统一格式
+      const models = modelsList.map(m => ({
+        provider: providerName,
+        providerConfig: providerConfig,
+        modelId: m.id,
+        displayName: `${providerName}/${m.id}`,
+        // 从 API 返回的数据中提取（如果有）
+        contextWindow: m.context_length || null,
+        maxOutputTokens: m.max_tokens || null,
+        supportsVision: false, // 需要进一步检测
+        supportsThinking: false, // 需要进一步检测
+        supportsFunctionCalling: true,
+        inputModalities: ['text'],
+        // 保留原始数据
+        _raw: m
+      }));
+
+      return models;
+
+    } catch (error) {
+      console.warn(`  ⚠ 获取失败: ${error.message}`);
+      return [];
+    }
   }
 
   /**
