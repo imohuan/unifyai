@@ -270,10 +270,13 @@ export class PenguinAdapter extends BaseAdapter {
           config.tools.mcpServers = [];
         }
 
-        // 清空现有的 MCP 服务器配置
-        config.tools.mcpServers = [];
+        // 创建名称到索引的映射（用于查找重复）
+        const existingServers = new Map();
+        config.tools.mcpServers.forEach((server, index) => {
+          existingServers.set(server.name, index);
+        });
 
-        // 转换 MCP 配置到 PenguinHarness 格式
+        // 转换 MCP 配置到 PenguinHarness 格式（增量添加/更新）
         for (const [name, server] of Object.entries(mcpServers)) {
           const isRemote = server.transport === 'streamable-http' || server.transport === 'sse' || !!server.url;
 
@@ -308,7 +311,17 @@ export class PenguinAdapter extends BaseAdapter {
             }
           }
 
-          config.tools.mcpServers.push(mcpConfig);
+          // 检查是否已存在同名服务器
+          if (existingServers.has(name)) {
+            // 覆盖已存在的服务器
+            const index = existingServers.get(name);
+            config.tools.mcpServers[index] = mcpConfig;
+            console.log(`      ↻ 更新: ${name}`);
+          } else {
+            // 添加新服务器
+            config.tools.mcpServers.push(mcpConfig);
+            console.log(`      + 新增: ${name}`);
+          }
         }
 
         // 写回 YAML 文件（保持格式）
@@ -320,7 +333,10 @@ export class PenguinAdapter extends BaseAdapter {
         });
 
         fs.writeFileSync(configPath, newYamlContent, 'utf-8');
-        console.log(`      ✓ 已更新 ${Object.keys(mcpServers).length} 个 MCP 服务器`);
+        
+        const added = Object.keys(mcpServers).filter(name => !existingServers.has(name)).length;
+        const updated = Object.keys(mcpServers).filter(name => existingServers.has(name)).length;
+        console.log(`      ✓ 完成: 新增 ${added} 个, 更新 ${updated} 个`);
         successCount++;
 
       } catch (error) {
