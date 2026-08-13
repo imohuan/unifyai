@@ -1,0 +1,135 @@
+#!/usr/bin/env node
+
+/**
+ * config-loader.mjs
+ * 加载 .opencodex/config.json 配置
+ */
+
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
+
+export class ConfigLoader {
+  /**
+   * 加载 opencodex 配置
+   * @param {string} [configPath] - 配置文件路径，默认为 ~/.opencodex/config.json
+   * @returns {Promise<{providers: Object, models: Array, mcp: Object}>}
+   */
+  static async load(configPath) {
+    // 默认路径
+    if (!configPath) {
+      configPath = path.join(os.homedir(), '.opencodex', 'config.json');
+    }
+
+    // 检查文件是否存在
+    if (!fs.existsSync(configPath)) {
+      throw new Error(`配置文件不存在: ${configPath}`);
+    }
+
+    // 读取并解析 JSON
+    const raw = fs.readFileSync(configPath, 'utf-8');
+    const config = JSON.parse(raw);
+
+    // 提取 providers
+    const providers = config.providers || {};
+
+    // 提取 customModels
+    const customModels = config.customModels || [];
+
+    // 构建模型列表
+    const models = [];
+    
+    for (const [providerName, providerConfig] of Object.entries(providers)) {
+      // 从 customModels 中找到属于该 provider 的模型
+      const providerModels = customModels.filter(m => m.provider === providerName);
+
+      // 如果没有自定义模型，使用 defaultModel
+      if (providerModels.length === 0 && providerConfig.defaultModel) {
+        models.push({
+          provider: providerName,
+          providerConfig: providerConfig,
+          modelId: providerConfig.defaultModel,
+          displayName: `${providerName}/${providerConfig.defaultModel}`,
+          // 元数据稍后由 MetadataFetcher 补全
+          contextWindow: null,
+          maxOutputTokens: null,
+          supportsVision: false,
+          supportsThinking: false,
+          supportsFunctionCalling: true
+        });
+      }
+
+      for (const model of providerModels) {
+        models.push({
+          provider: providerName,
+          providerConfig: providerConfig,
+          modelId: model.modelId,
+          displayName: model.displayName || `${providerName}/${model.modelId}`,
+          contextWindow: model.contextWindow || null,
+          maxOutputTokens: model.outputLimit || null,
+          supportsVision: model.inputModalities?.includes('image') || false,
+          supportsThinking: false, // 需要从其他地方获取
+          supportsFunctionCalling: true, // 默认支持
+          inputModalities: model.inputModalities || ['text'],
+          // 保留原始数据
+          _raw: model
+        });
+      }
+    }
+
+    // 提取 MCP 配置（如果有）
+    const mcp = config.mcp || {};
+
+    console.log(`✓ 加载配置: ${Object.keys(providers).length} 个 provider, ${models.length} 个模型`);
+
+    return {
+      providers,
+      models,
+      mcp,
+      _raw: config
+    };
+  }
+
+  /**
+   * 从统一格式转换 MCP 服务器配置
+   * @param {Object} mcpConfig - opencodex 的 MCP 配置
+   * @returns {Object} 统一格式的 MCP 服务器配置
+   */
+  static normalizeMcp(mcpConfig) {
+    const servers = {};
+
+    for (const [name, server] of Object.entries(mcpConfig)) {
+      const isRemote = server.type === 'remote' || !!server.url;
+
+      servers[name] = {
+        name,
+        enabled: server.enabled !== false,
+        transport: isRemote ? (server.transport || 'streamable-http') : 'stdio',
+        // 本地服务器
+        command: isRemote ? null : (Array.isArray(server.command) ? server.command[0] : server.command),
+        args: isRemote ? null : (Array.isArray(server.command) ? server.command.slice(1) : (server.args || [])),
+        // 远程服务器
+        url: server.url || null,
+        bearerToken: this.extractBearerToken(server.headers),
+        env: server.environment || server.env || {},
+        // 原始数据
+        _raw: server
+      };
+    }
+
+    return servers;
+  }
+
+  /**
+   * 从 headers 中提取 Bearer token
+   * @param {Object} headers
+   * @returns {string|null}
+   */
+  static extractBearerToken(headers) {
+    if (!headers || typeof headers !== 'object') return null;
+
+    const auth = headers.Authorization || headers.authorization || '';
+    const match = auth.match(/Bearer\s+(.+)/);
+    return match ? match[1] : null;
+  }
+}

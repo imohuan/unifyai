@@ -1,0 +1,170 @@
+{
+  "deepseek-v4-pro": {
+    "context": 1048576,
+    "output": 393216,
+    "vision": true,
+    "thinking": true
+  },
+  "deepseek-v4-flash": {
+    "context": 1048576,
+    "output": 393216,
+    "vision": true,
+    "thinking": true
+  },
+  "claude-opus-5": {
+    "context": 1000000,
+    "output": 128000,
+    "vision": true,
+    "thinking": true
+  },
+  "claude-sonnet-5": {
+    "context": 1000000,
+    "output": 128000,
+    "vision": true,
+    "thinking": true
+  },
+  "claude-fable-5": {
+    "context": 1000000,
+    "output": 128000,
+    "vision": true,
+    "thinking": true
+  },
+  "claude-sonnet-4-6": {
+    "context": 1000000,
+    "output": 128000,
+    "vision": true,
+    "thinking": false
+  },
+  "claude-haiku-4-5-20251001": {
+    "context": 200000,
+    "output": 64000,
+    "vision": true,
+    "thinking": false
+  },
+  "gpt-5.4": {
+    "context": 1050000,
+    "output": 128000,
+    "vision": true,
+    "thinking": true
+  },
+  "gpt-5.4-mini": {
+    "context": 400000,
+    "output": 128000,
+    "vision": true,
+    "thinking": true
+  },
+  "gpt-5.5": {
+    "context": 1050000,
+    "output": 128000,
+    "vision": true,
+    "thinking": true
+  },
+  "gpt-5.6": {
+    "context": 1050000,
+    "output": 128000,
+    "vision": true,
+    "thinking": true
+  },
+  "gpt-5.6-luna": {
+    "context": 1050000,
+    "output": 128000,
+    "vision": true,
+    "thinking": true
+  },
+  "gpt-5.6-sol": {
+    "context": 1050000,
+    "output": 128000,
+    "vision": true,
+    "thinking": true
+  },
+  "gpt-5.6-terra": {
+    "context": 1050000,
+    "output": 128000,
+    "vision": true,
+    "thinking": true
+  },
+  "gpt-3.5-turbo": {
+    "context": 16385,
+    "output": 4096,
+    "vision": false,
+    "thinking": false
+  },
+  "gpt-image-2": {
+    "context": 200000,
+    "output": 32000,
+    "vision": true,
+    "thinking": false
+  },
+  "glm-5.1": {
+    "context": 200000,
+    "output": 128000,
+    "vision": true,
+    "thinking": true
+  },
+  "glm-5.2": {
+    "context": 1048576,
+    "output": 131072,
+    "vision": true,
+    "thinking": true
+  },
+  "kimi-k2.5": {
+    "context": 262144,
+    "output": 262144,
+    "vision": false,
+    "thinking": false
+  },
+  "kimi-k2.6": {
+    "context": 262144,
+    "output": 262144,
+    "vision": false,
+    "thinking": false
+  },
+  "kimi-k2.7": {
+    "context": 262144,
+    "output": 262144,
+    "vision": false,
+    "thinking": false
+  },
+  "kimi-k3": {
+    "context": 1048576,
+    "output": 1048576,
+    "vision": true,
+    "thinking": true
+  },
+  "grok-4.5": {
+    "context": 500000,
+    "output": 500000,
+    "vision": false,
+    "thinking": false
+  },
+  "hunyuan-2.0-thinking": {
+    "context": 192000,
+    "output": 64000,
+    "vision": false,
+    "thinking": true
+  },
+  "hunyuan-chat": {
+    "context": 144000,
+    "output": 16000,
+    "vision": false,
+    "thinking": false
+  },
+  "hy3": {
+    "context": 262144,
+    "output": 128000,
+    "vision": false,
+    "thinking": false
+  },
+  "hy3-preview": {
+    "context": 256000,
+    "output": 128000,
+    "vision": false,
+    "thinking": false
+  },
+  "minimax-m3": {
+    "context": 1048576,
+    "output": 524288,
+    "vision": true,
+    "thinking": true
+  }
+}
