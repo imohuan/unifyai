@@ -1,8 +1,8 @@
-# AI Config Sync
+# UnifyAI
 
-> 基于 OpenCodex 的 AI 配置同步工具
+> Unified AI configuration sync tool for multiple AI development platforms
 
-将 OpenCodex 配置中的模型和 MCP 服务器配置同步到多个 AI 开发工具平台。
+Sync models and MCP server configurations from OpenCodex to multiple AI development platforms.
 
 ## 🌟 特性
 
@@ -85,27 +85,27 @@ node src/cli.mjs --list-platforms
   -h, --help                 显示帮助信息
 ```
 
-## 📁 项目结构
+## 📁 Project Structure
 
 ```
-ai-sync/
+unifyai/
 ├── src/
 │   ├── core/
-│   │   ├── config-loader.mjs          # 配置加载器（支持 OpenCodex 代理服务）
-│   │   ├── metadata-fetcher.mjs       # 元数据获取器（OpenRouter API）
-│   │   ├── variants-generator.mjs     # Variants 生成器
-│   │   └── toml-stable.mjs            # TOML 稳定编辑器
+│   │   ├── config-loader.mjs          # Configuration loader (OpenCodex proxy service support)
+│   │   ├── metadata-fetcher.mjs       # Metadata fetcher (OpenRouter API)
+│   │   ├── variants-generator.mjs     # Variants generator
+│   │   └── toml-stable.mjs            # TOML stable editor
 │   ├── adapters/
-│   │   ├── base-adapter.mjs           # 适配器基类
-│   │   ├── opencode-adapter.mjs       # OpenCode 适配器
-│   │   ├── codex-adapter.mjs          # Codex 适配器
-│   │   ├── claude-code-adapter.mjs    # Claude Code 适配器
-│   │   ├── reasonix-adapter.mjs       # Reasonix 适配器
-│   │   └── penguin-adapter.mjs        # PenguinHarness 适配器
-│   └── cli.mjs                        # CLI 主入口
+│   │   ├── base-adapter.mjs           # Base adapter
+│   │   ├── opencode-adapter.mjs       # OpenCode adapter
+│   │   ├── codex-adapter.mjs          # Codex adapter
+│   │   ├── claude-code-adapter.mjs    # Claude Code adapter
+│   │   ├── reasonix-adapter.mjs       # Reasonix adapter
+│   │   └── penguin-adapter.mjs        # PenguinHarness adapter
+│   └── cli.mjs                        # CLI entry point
 ├── .cache/
-│   └── openrouter-models.json         # OpenRouter 模型缓存（自动生成）
-├── mcp.json                           # MCP 配置示例
+│   └── openrouter-models.json         # OpenRouter model cache (auto-generated)
+├── mcp.json                           # MCP config example
 └── README.md
 ```
 

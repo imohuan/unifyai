@@ -1,11 +1,11 @@
 {
-  "name": "ai-sync",
+  "name": "unifyai",
   "version": "1.0.0",
-  "description": "同步 AI 配置到多个平台",
+  "description": "Unified AI configuration sync tool for multiple AI development platforms",
   "type": "module",
   "main": "src/cli.mjs",
   "bin": {
-    "ai-sync": "./src/cli.mjs"
+    "unifyai": "./src/cli.mjs"
   },
   "scripts": {
     "start": "node src/cli.mjs",
@@ -18,10 +18,22 @@
     "opencode",
     "codex",
     "reasonix",
-    "claude"
+    "claude",
+    "opencodex",
+    "mcp",
+    "model-context-protocol",
+    "unified-config"
   ],
   "author": "",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/imohuan/unifyai.git"
+  },
+  "bugs": {
+    "url": "https://github.com/imohuan/unifyai/issues"
+  },
+  "homepage": "https://github.com/imohuan/unifyai#readme",
   "dependencies": {
     "@iarna/toml": "^2.2.5",
     "commander": "^12.0.0",

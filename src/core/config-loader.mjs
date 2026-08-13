@@ -64,8 +64,8 @@ export class ConfigLoader {
       }
     }
 
-    // 提取 MCP 配置（如果有）
-    const mcp = config.mcp || {};
+    // 从项目的 mcp.json 加载 MCP 配置
+    const mcp = await this.loadMcpConfig();
 
     console.log(`\n✓ 总计: ${models.length} 个模型来自 ${Object.keys(providers).length} 个 provider`);
 
@@ -75,6 +75,48 @@ export class ConfigLoader {
       mcp,
       _raw: config
     };
+  }
+
+  /**
+   * 加载 MCP 配置
+   * @returns {Promise<Object>} MCP 配置对象
+   */
+  static async loadMcpConfig() {
+    const mcpPath = path.join(process.cwd(), 'mcp.json');
+    
+    try {
+      if (!fs.existsSync(mcpPath)) {
+        console.log('⚠ mcp.json 不存在，跳过 MCP 同步');
+        return {};
+      }
+
+      const content = fs.readFileSync(mcpPath, 'utf-8');
+      const mcpConfig = JSON.parse(content);
+      
+      // 验证 mcpServers 字段
+      if (!mcpConfig.mcpServers || typeof mcpConfig.mcpServers !== 'object') {
+        console.warn('⚠ mcp.json 格式错误：缺少 mcpServers 字段');
+        return {};
+      }
+
+      // 过滤掉 disabled 的服务器
+      const enabledServers = {};
+      for (const [name, config] of Object.entries(mcpConfig.mcpServers)) {
+        if (!config.disabled) {
+          enabledServers[name] = config;
+        }
+      }
+
+      const total = Object.keys(mcpConfig.mcpServers).length;
+      const enabled = Object.keys(enabledServers).length;
+      
+      console.log(`\n✓ MCP 配置: ${enabled}/${total} 个服务器启用`);
+      
+      return { mcpServers: enabledServers };
+    } catch (error) {
+      console.warn(`⚠ 加载 mcp.json 失败: ${error.message}`);
+      return {};
+    }
   }
 
   /**

@@ -92,7 +92,7 @@ export class OpenCodeAdapter extends BaseAdapter {
       config.mcp = {};
     }
 
-    // 转换 MCP 配置
+    // 转换 MCP 配置到 OpenCode 格式
     for (const [name, server] of Object.entries(mcpServers)) {
       const isRemote = server.transport === 'streamable-http' || server.transport === 'sse' || !!server.url;
 
