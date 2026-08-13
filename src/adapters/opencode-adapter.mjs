@@ -3,6 +3,11 @@
 /**
  * opencode-adapter.mjs
  * OpenCode 适配器（模型 + MCP）
+ * 
+ * 关键特性：
+ * - 按 SDK 包分组模型（@ai-sdk/openai, @ai-sdk/anthropic 等）
+ * - 同一 provider 的不同 SDK 模型需要分开配置
+ * - 例如：newapi-openai, newapi-anthropic, newapi-deepseek
  */
 
 import path from 'node:path';
@@ -37,24 +42,24 @@ export class OpenCodeAdapter extends BaseAdapter {
       config.provider = {};
     }
 
-    // 按 provider 分组
-    const providerGroups = this.groupByProvider(models);
+    // 按 SDK 分组模型
+    const sdkGroups = this.groupBySdk(models);
 
-    // 更新每个 provider 的配置
-    for (const [providerName, group] of Object.entries(providerGroups)) {
-      const providerKey = this.generateProviderKey(providerName, group.config);
+    // 更新每个 SDK 组的配置
+    for (const [sdk, group] of Object.entries(sdkGroups)) {
+      const providerKey = this.generateProviderKey(group.providerName, sdk);
 
       config.provider[providerKey] = {
-        name: providerName.toLowerCase(),
-        npm: this.detectNpmPackage(group.config.adapter),
+        name: group.providerName.toLowerCase(),
+        npm: sdk,
         options: {
-          baseURL: group.config.baseUrl,
-          apiKey: group.config.apiKey
+          baseURL: group.baseUrl,
+          apiKey: group.apiKey
         },
         models: group.models
       };
 
-      console.log(`    • ${providerKey}: ${Object.keys(group.models).length} 个模型`);
+      console.log(`    • ${providerKey} (${sdk}): ${Object.keys(group.models).length} 个模型`);
     }
 
     // 写入配置
@@ -113,15 +118,23 @@ export class OpenCodeAdapter extends BaseAdapter {
   }
 
   /**
-   * 按 provider 分组模型
+   * 按 SDK 分组模型
+   * 同一个 provider 的不同 SDK 模型会被分到不同组
    */
-  groupByProvider(models) {
+  groupBySdk(models) {
     const groups = {};
 
     for (const model of models) {
-      if (!groups[model.provider]) {
-        groups[model.provider] = {
-          config: model.providerConfig,
+      // 检测模型所属的 SDK
+      const sdk = this.detectSdk(model.modelId);
+      const groupKey = `${model.provider}::${sdk}`;
+
+      if (!groups[groupKey]) {
+        groups[groupKey] = {
+          providerName: model.provider,
+          sdk: sdk,
+          baseUrl: model.providerConfig.baseUrl,
+          apiKey: model.providerConfig.apiKey,
           models: {}
         };
       }
@@ -142,51 +155,78 @@ export class OpenCodeAdapter extends BaseAdapter {
       };
 
       // 添加 variants（如果需要）
-      const variants = VariantsGenerator.generateForOpenCode(model.modelId, model);
-      if (variants && Object.keys(variants).length > 0) {
-        modelConfig.variants = variants;
+      if (model.supportsThinking) {
+        const variants = VariantsGenerator.generateForOpenCode(model.modelId, model);
+        if (variants && Object.keys(variants).length > 0) {
+          modelConfig.variants = variants;
+        }
       }
 
-      groups[model.provider].models[model.modelId] = modelConfig;
+      groups[groupKey].models[model.modelId] = modelConfig;
     }
 
-    return groups;
+    // 转换为 { sdk: group } 格式
+    const result = {};
+    for (const [key, group] of Object.entries(groups)) {
+      result[group.sdk] = group;
+    }
+
+    return result;
+  }
+
+  /**
+   * 根据模型名称检测应该使用的 SDK
+   */
+  detectSdk(modelId) {
+    const lower = modelId.toLowerCase();
+
+    // Anthropic 系列
+    if (lower.includes('claude')) {
+      return '@ai-sdk/anthropic';
+    }
+
+    // Google 系列
+    if (lower.includes('gemini') || lower.includes('palm')) {
+      return '@ai-sdk/google';
+    }
+
+    // DeepSeek 系列
+    if (lower.includes('deepseek')) {
+      return '@ai-sdk/openai'; // DeepSeek 也使用 OpenAI SDK
+    }
+
+    // Mistral 系列
+    if (lower.includes('mistral') || lower.includes('mixtral')) {
+      return '@ai-sdk/mistral';
+    }
+
+    // Cohere 系列
+    if (lower.includes('cohere') || lower.includes('command')) {
+      return '@ai-sdk/cohere';
+    }
+
+    // xAI 系列
+    if (lower.includes('grok')) {
+      return '@ai-sdk/xai';
+    }
+
+    // OpenAI 和兼容系列（默认）
+    if (lower.includes('gpt') || lower.includes('o1') || lower.includes('o3')) {
+      return '@ai-sdk/openai';
+    }
+
+    // 其他所有模型默认使用 openai-compatible
+    return '@ai-sdk/openai-compatible';
   }
 
   /**
    * 生成 provider key
-   * 格式: providerName-npmPackageName
-   * 例如: newapi-openai, newapi-anthropic
+   * 格式: providerName-sdkName
+   * 例如: newapi-openai, newapi-anthropic, newapi-deepseek
    */
-  generateProviderKey(providerName, providerConfig) {
-    const adapter = providerConfig.adapter || 'openai-chat';
-    const npmPackage = this.detectNpmPackage(adapter);
-    const packageName = npmPackage.split('/')[1]; // @ai-sdk/openai → openai
-
-    return `${providerName.toLowerCase()}-${packageName}`;
-  }
-
-  /**
-   * 根据 adapter 类型检测 npm 包
-   */
-  detectNpmPackage(adapter) {
-    if (!adapter) {
-      return '@ai-sdk/openai';
-    }
-
-    const lower = adapter.toLowerCase();
-
-    if (lower.includes('anthropic')) {
-      return '@ai-sdk/anthropic';
-    } else if (lower.includes('deepseek')) {
-      return '@ai-sdk/deepseek';
-    } else if (lower.includes('openai-compatible')) {
-      return '@ai-sdk/openai-compatible';
-    } else if (lower.includes('openai')) {
-      return '@ai-sdk/openai';
-    }
-
-    // 默认返回 openai
-    return '@ai-sdk/openai';
+  generateProviderKey(providerName, sdk) {
+    // 从 @ai-sdk/xxx 提取 xxx
+    const sdkName = sdk.split('/')[1] || 'openai';
+    return `${providerName.toLowerCase()}-${sdkName}`;
   }
 }
