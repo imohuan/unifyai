@@ -58,13 +58,14 @@ export class CodexAdapter extends BaseAdapter {
         delete entry.command;
         delete entry.args;
         delete entry.env;
+        delete entry.headers; // 迁移：清理旧错误字段（Codex 用 http_headers）
 
-        // 添加 headers（如果需要）
+        // 添加 http_headers（Codex 专用字段名；用于 Bearer 鉴权）
         if (server.bearerToken) {
-          if (!entry.headers) {
-            entry.headers = {};
+          if (!entry.http_headers) {
+            entry.http_headers = {};
           }
-          entry.headers.Authorization = `Bearer ${server.bearerToken}`;
+          entry.http_headers.Authorization = `Bearer ${server.bearerToken}`;
         }
       } else {
         // 本地服务器
@@ -89,6 +90,7 @@ export class CodexAdapter extends BaseAdapter {
         // 清理远程服务器字段
         delete entry.url;
         delete entry.headers;
+        delete entry.http_headers;
       }
 
       // 清理统一格式字段
