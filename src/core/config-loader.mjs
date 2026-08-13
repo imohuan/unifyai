@@ -35,19 +35,32 @@ export class ConfigLoader {
 
     console.log(`✓ 加载配置: ${Object.keys(providers).length} 个 provider`);
 
-    // 从每个 provider 获取模型列表
-    const models = [];
+    // 优先尝试从 opencodex 代理服务获取统一模型列表
+    const port = config.port || 10100;
+    const proxyUrl = `http://localhost:${port}/v1/models`;
     
-    for (const [providerName, providerConfig] of Object.entries(providers)) {
-      console.log(`\n📡 获取 ${providerName} 的模型列表...`);
+    let models = [];
+    const proxyResult = await this.tryFetchFromProxy(proxyUrl, providers);
+    
+    if (proxyResult.success) {
+      console.log(`\n✓ 从 OpenCodex 代理服务获取模型列表 (http://localhost:${port})`);
+      console.log(`  ✓ 获取到 ${proxyResult.models.length} 个模型\n`);
+      models = proxyResult.models;
+    } else {
+      console.log(`\n⚠ OpenCodex 代理服务不可用，降级到逐个 provider 获取`);
       
-      const providerModels = await this.fetchProviderModels(providerName, providerConfig);
-      
-      if (providerModels.length > 0) {
-        console.log(`  ✓ 获取到 ${providerModels.length} 个模型`);
-        models.push(...providerModels);
-      } else {
-        console.warn(`  ⚠ ${providerName} 没有返回模型`);
+      // 降级：逐个 provider 获取
+      for (const [providerName, providerConfig] of Object.entries(providers)) {
+        console.log(`\n📡 获取 ${providerName} 的模型列表...`);
+        
+        const providerModels = await this.fetchProviderModels(providerName, providerConfig);
+        
+        if (providerModels.length > 0) {
+          console.log(`  ✓ 获取到 ${providerModels.length} 个模型`);
+          models.push(...providerModels);
+        } else {
+          console.warn(`  ⚠ ${providerName} 没有返回模型`);
+        }
       }
     }
 
@@ -62,6 +75,103 @@ export class ConfigLoader {
       mcp,
       _raw: config
     };
+  }
+
+  /**
+   * 尝试从 OpenCodex 代理服务获取统一模型列表
+   * @param {string} proxyUrl - 代理服务的 /v1/models URL
+   * @param {Object} providers - provider 配置对象
+   * @returns {Promise<{success: boolean, models: Array}>}
+   */
+  static async tryFetchFromProxy(proxyUrl, providers) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3000); // 3秒超时
+
+      const response = await fetch(proxyUrl, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        signal: controller.signal
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        return { success: false, models: [] };
+      }
+
+      const data = await response.json();
+      
+      if (!data.data || !Array.isArray(data.data)) {
+        return { success: false, models: [] };
+      }
+
+      // 解析模型列表，推断 provider
+      const models = [];
+      for (const m of data.data) {
+        // 模型 ID 格式可能是:
+        // 1. "PROVIDER/model-id" (例如: "IMOHUAN/deepseek-v4-pro")
+        // 2. "PROVIDER/org/model-id" (例如: "IMOHUAN/deepseek-ai/DeepSeek-V4-Pro")
+        // 3. "model-id" (例如: "deepseek-v4-pro")
+        
+        let providerName = null;
+        let modelId = m.id;
+
+        // 检查是否以已知 provider 名称开头
+        for (const name of Object.keys(providers)) {
+          if (m.id.startsWith(name + '/')) {
+            providerName = name;
+            // 去掉 "PROVIDER/" 前缀，保留后面的部分
+            modelId = m.id.substring(name.length + 1);
+            break;
+          }
+        }
+
+        // 如果没有匹配到 provider 前缀
+        if (!providerName) {
+          // 尝试匹配到某个 provider 的 defaultModel
+          for (const [name, config] of Object.entries(providers)) {
+            if (config.defaultModel === m.id) {
+              providerName = name;
+              break;
+            }
+          }
+          
+          // 如果还是找不到，使用第一个 provider
+          if (!providerName) {
+            providerName = Object.keys(providers)[0];
+          }
+        }
+
+        const providerConfig = providers[providerName];
+        if (!providerConfig) {
+          // 跳过无法识别的 provider
+          continue;
+        }
+
+        models.push({
+          provider: providerName,
+          providerConfig: providerConfig,
+          modelId: modelId,
+          displayName: `${providerName}/${modelId}`,
+          contextWindow: m.context_length || null,
+          maxOutputTokens: m.max_tokens || null,
+          supportsVision: null, // 由 metadata-fetcher 从 OpenRouter 获取
+          supportsThinking: null, // 由 metadata-fetcher 从 OpenRouter 获取
+          supportsFunctionCalling: true,
+          inputModalities: ['text'],
+          _raw: m,
+          _source: 'opencodex-proxy'
+        });
+      }
+
+      return { success: true, models };
+    } catch (error) {
+      // 静默失败，返回 success: false
+      return { success: false, models: [] };
+    }
   }
 
   /**
