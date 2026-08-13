@@ -27,11 +27,37 @@ Sync models and MCP server configurations from OpenCodex to multiple AI developm
 
 ## 🚀 快速开始
 
-### 安装依赖
+### 安装
 
 ```bash
-npm install
+# 全局安装
+npm install -g unifyai
+
+# 或使用 npx
+npx unifyai --help
 ```
+
+### 配置文件
+
+UnifyAI 支持两种配置路径（按优先级）：
+
+1. **项目配置**：`./mcp.json`（当前目录）
+2. **全局配置**：`~/.unifyai/mcp.json`（用户目录）
+
+**首次使用**：复制示例配置文件
+
+```bash
+# 创建全局配置目录
+mkdir -p ~/.unifyai
+
+# 复制示例配置
+cp mcp.example.json ~/.unifyai/mcp.json
+
+# 编辑配置，填入你的 API keys
+nano ~/.unifyai/mcp.json
+```
+
+**缓存位置**：`~/.unifyai/cache/` - 自动创建
 
 ### 基本用法
 
@@ -103,10 +129,13 @@ unifyai/
 │   │   ├── reasonix-adapter.mjs       # Reasonix adapter
 │   │   └── penguin-adapter.mjs        # PenguinHarness adapter
 │   └── cli.mjs                        # CLI entry point
-├── .cache/
-│   └── openrouter-models.json         # OpenRouter model cache (auto-generated)
-├── mcp.json                           # MCP config example
+├── mcp.example.json                   # MCP config example
 └── README.md
+
+~/.unifyai/                            # User config directory
+├── mcp.json                           # Your MCP configuration
+└── cache/
+    └── openrouter-models.json         # OpenRouter model cache (auto-generated)
 ```
 
 ## 🔧 工作原理
@@ -124,29 +153,32 @@ unifyai/
 
 ### 2. MCP 配置加载
 
-支持从 OpenCodex 配置文件中读取 MCP 服务器：
+**配置路径优先级**：
+1. `./mcp.json`（当前工作目录）
+2. `~/.unifyai/mcp.json`（用户配置目录）
 
-**配置格式** (`~/.opencodex/config.json`):
+**配置格式** (`mcp.json`):
 ```json
 {
-  "mcp": {
-    "mcpServers": {
-      "filesystem": {
-        "command": "npx",
-        "args": ["-y", "@modelcontextprotocol/server-filesystem", "D:/Code"],
-        "disabled": false
-      },
-      "remote-server": {
-        "type": "remote",
-        "url": "https://mcp-gateway.example.com",
-        "headers": {
-          "Authorization": "Bearer sk-xxx"
-        }
+  "mcpServers": {
+    "filesystem": {
+      "type": "local",
+      "enabled": true,
+      "command": ["npx", "-y", "@modelcontextprotocol/server-filesystem", "/path/to/dir"]
+    },
+    "remote-server": {
+      "type": "remote",
+      "enabled": true,
+      "url": "https://mcp-gateway.example.com",
+      "headers": {
+        "Authorization": "Bearer YOUR_API_KEY"
       }
     }
   }
 }
 ```
+
+参考 `mcp.example.json` 获取更多配置示例。
 
 ### 3. 元数据增强
 
@@ -207,7 +239,7 @@ unifyai/
 ## 📊 OpenRouter 集成
 
 ### 缓存机制
-- **缓存位置**: `.cache/openrouter-models.json`
+- **缓存位置**: `~/.unifyai/cache/openrouter-models.json`
 - **缓存时效**: 24 小时
 - **缓存大小**: ~410 个模型的元数据
 - **自动更新**: 缓存过期后自动从 API 获取
@@ -258,11 +290,13 @@ gpt-5.6-luna           → openai/o1-preview
 ## ⚠️ 注意事项
 
 1. **首次使用**：运行 `--fetch-metadata` 下载模型数据
-2. **OpenCodex 代理服务**：确保 `http://localhost:10100` 可访问（推荐）
-3. **网络连接**：首次下载需要访问 OpenRouter API
-4. **缓存刷新**：24 小时后自动更新，或手动运行 `--fetch-metadata`
-5. **备份文件**：自动生成 `.bak-{timestamp}` 文件
-6. **MCP 配置路径**：
+2. **配置文件**：将 `mcp.example.json` 复制到 `~/.unifyai/mcp.json` 并填入你的配置
+3. **安全性**：不要将包含 API keys 的 `mcp.json` 提交到版本控制
+4. **OpenCodex 代理服务**：确保 `http://localhost:10100` 可访问（推荐）
+5. **网络连接**：首次下载需要访问 OpenRouter API
+6. **缓存刷新**：24 小时后自动更新，或手动运行 `--fetch-metadata`
+7. **备份文件**：自动生成 `.bak-{timestamp}` 文件
+8. **MCP 配置路径**：
    - OpenCode: 写入 `config.mcp`
    - Codex/Claude Code: 写入 `mcpServers` 顶层字段
    - Reasonix: 写入 `mcp.server` 数组

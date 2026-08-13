@@ -79,23 +79,36 @@ export class ConfigLoader {
 
   /**
    * 加载 MCP 配置
+   * 优先从 cwd/mcp.json 读取，回退到 ~/.unifyai/mcp.json
    * @returns {Promise<Object>} MCP 配置对象
    */
   static async loadMcpConfig() {
-    const mcpPath = path.join(process.cwd(), 'mcp.json');
+    // 优先级 1: 当前工作目录
+    const cwdPath = path.join(process.cwd(), 'mcp.json');
+    // 优先级 2: 用户配置目录
+    const userPath = path.join(os.homedir(), '.unifyai', 'mcp.json');
+    
+    let mcpPath = null;
+    let source = null;
+    
+    if (fs.existsSync(cwdPath)) {
+      mcpPath = cwdPath;
+      source = 'cwd';
+    } else if (fs.existsSync(userPath)) {
+      mcpPath = userPath;
+      source = '~/.unifyai';
+    } else {
+      console.log('⚠ mcp.json 不存在（已尝试 cwd 和 ~/.unifyai），跳过 MCP 同步');
+      return {};
+    }
     
     try {
-      if (!fs.existsSync(mcpPath)) {
-        console.log('⚠ mcp.json 不存在，跳过 MCP 同步');
-        return {};
-      }
-
       const content = fs.readFileSync(mcpPath, 'utf-8');
       const mcpConfig = JSON.parse(content);
       
       // 验证 mcpServers 字段
       if (!mcpConfig.mcpServers || typeof mcpConfig.mcpServers !== 'object') {
-        console.warn('⚠ mcp.json 格式错误：缺少 mcpServers 字段');
+        console.warn(`⚠ ${mcpPath} 格式错误：缺少 mcpServers 字段`);
         return {};
       }
 
@@ -110,11 +123,11 @@ export class ConfigLoader {
       const total = Object.keys(mcpConfig.mcpServers).length;
       const enabled = Object.keys(enabledServers).length;
       
-      console.log(`\n✓ MCP 配置: ${enabled}/${total} 个服务器启用`);
+      console.log(`\n✓ MCP 配置 (来自 ${source}): ${enabled}/${total} 个服务器启用`);
       
       return { mcpServers: enabledServers };
     } catch (error) {
-      console.warn(`⚠ 加载 mcp.json 失败: ${error.message}`);
+      console.warn(`⚠ 加载 ${mcpPath} 失败: ${error.message}`);
       return {};
     }
   }

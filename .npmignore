@@ -1,0 +1,21 @@
+# Exclude sensitive files
+mcp.json
+.cache/
+
+# Development files
+*.log
+*.bak
+*.bak-*
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.vscode/
+.idea/
+
+# Test files
+test/
+*.test.js
+*.spec.js

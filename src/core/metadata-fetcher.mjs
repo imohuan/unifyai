@@ -7,12 +7,14 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const CACHE_FILE = path.resolve(__dirname, '../../.cache/openrouter-models.json');
+const CACHE_DIR = path.join(os.homedir(), '.unifyai', 'cache');
+const CACHE_FILE = path.join(CACHE_DIR, 'openrouter-models.json');
 const CACHE_TTL = 24 * 60 * 60 * 1000; // 24 小时
 
 export class MetadataFetcher {
