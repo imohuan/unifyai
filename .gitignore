@@ -1,9 +1,5 @@
 node_modules/
-*.log
-*.bak
+.cache/
 *.bak-*
-.env
 .DS_Store
-dist/
-*.test.mjs
-coverage/
+*.log

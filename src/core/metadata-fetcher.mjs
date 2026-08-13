@@ -2,7 +2,7 @@
 
 /**
  * metadata-fetcher.mjs
- * 获取和增强模型元数据
+ * 从 OpenRouter API 获取和缓存模型元数据
  */
 
 import fs from 'node:fs';
@@ -12,9 +12,11 @@ import { fileURLToPath } from 'node:url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+const CACHE_FILE = path.resolve(__dirname, '../../.cache/openrouter-models.json');
+const CACHE_TTL = 24 * 60 * 60 * 1000; // 24 小时
+
 export class MetadataFetcher {
-  static knownModels = null;
-  static openRouterCache = null;
+  static cache = null;
 
   /**
    * 增强模型元数据
@@ -22,16 +24,8 @@ export class MetadataFetcher {
    * @returns {Promise<Array>} 增强后的模型列表
    */
   static async enrich(models) {
-    // 加载已知模型
-    if (!this.knownModels) {
-      this.knownModels = this.loadKnownModels();
-    }
-
-    // 获取 OpenRouter 索引（异步，不阻塞）
-    if (!this.openRouterCache) {
-      this.openRouterCache = this.fetchOpenRouterIndex().catch(() => ({}));
-    }
-    const orIndex = await this.openRouterCache;
+    // 加载或获取 OpenRouter 数据
+    const orModels = await this.getOpenRouterModels();
 
     for (const model of models) {
       // 如果已有完整元数据，跳过
@@ -39,150 +33,171 @@ export class MetadataFetcher {
         continue;
       }
 
-      // 查找元数据
-      const metadata =
-        this.findInKnownModels(model.modelId, this.knownModels) ||
-        this.findInOpenRouter(model.modelId, orIndex) ||
-        this.getDefaultMetadata();
+      // 从 OpenRouter 查找元数据
+      const metadata = this.findInOpenRouter(model.modelId, orModels);
 
-      // 合并元数据（优先使用已有的）
-      model.contextWindow = model.contextWindow || metadata.context || 200000;
-      model.maxOutputTokens = model.maxOutputTokens || metadata.output || 32000;
-      model.supportsVision = model.supportsVision ?? metadata.vision ?? false;
-      model.supportsThinking = model.supportsThinking ?? metadata.thinking ?? false;
+      if (metadata) {
+        // 合并元数据（优先使用已有的）
+        model.contextWindow = model.contextWindow || metadata.context;
+        model.maxOutputTokens = model.maxOutputTokens || metadata.output;
+        model.supportsVision = model.supportsVision ?? metadata.vision;
+        model.supportsThinking = model.supportsThinking ?? metadata.reasoning;
+      } else {
+        // 使用默认值
+        model.contextWindow = model.contextWindow || 200000;
+        model.maxOutputTokens = model.maxOutputTokens || 32000;
+        model.supportsVision = model.supportsVision ?? false;
+        model.supportsThinking = model.supportsThinking ?? false;
+      }
     }
 
     return models;
   }
 
   /**
-   * 加载已知模型配置
+   * 获取 OpenRouter 模型数据（优先使用缓存）
    */
-  static loadKnownModels() {
-    try {
-      const configPath = path.resolve(__dirname, '../../config/known-models.json');
-      if (!fs.existsSync(configPath)) {
-        console.warn('⚠ known-models.json 不存在，使用空配置');
-        return {};
-      }
-      const raw = fs.readFileSync(configPath, 'utf-8');
-      return JSON.parse(raw);
-    } catch (error) {
-      console.warn('⚠ 加载 known-models.json 失败:', error.message);
-      return {};
+  static async getOpenRouterModels() {
+    // 检查缓存
+    if (this.cache) {
+      return this.cache;
     }
-  }
 
-  /**
-   * 从 OpenRouter 获取模型索引
-   */
-  static async fetchOpenRouterIndex() {
+    // 检查本地缓存文件
+    if (fs.existsSync(CACHE_FILE)) {
+      const stat = fs.statSync(CACHE_FILE);
+      const age = Date.now() - stat.mtimeMs;
+
+      if (age < CACHE_TTL) {
+        try {
+          const raw = fs.readFileSync(CACHE_FILE, 'utf-8');
+          this.cache = JSON.parse(raw);
+          console.log(`✓ 使用缓存的 OpenRouter 数据 (${this.cache.length} 个模型)`);
+          return this.cache;
+        } catch (error) {
+          console.warn('⚠ 缓存文件损坏，重新获取');
+        }
+      }
+    }
+
+    // 从 API 获取
     try {
+      console.log('🔄 从 OpenRouter API 获取模型数据...');
       const response = await fetch('https://openrouter.ai/api/v1/models');
+      
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
       }
 
       const data = await response.json();
-      const index = {};
+      const models = data.data || [];
 
-      for (const model of data.data || []) {
-        const id = model.id.split('/').pop();
-        index[id] = {
-          context: model.context_length,
-          output: model.top_provider?.max_completion_tokens,
-          vision: model.architecture?.modality === 'multimodal',
-          thinking: false // OpenRouter 暂不提供此信息
-        };
-      }
+      // 转换为简化格式
+      this.cache = models.map(m => ({
+        id: m.id,
+        name: m.name,
+        context: m.context_length,
+        output: m.top_provider?.max_completion_tokens,
+        vision: m.architecture?.modality?.includes('image') || 
+                m.architecture?.input_modalities?.includes('image'),
+        reasoning: m.reasoning?.mandatory === true || 
+                   m.supported_parameters?.includes('reasoning') ||
+                   m.supported_parameters?.includes('include_reasoning')
+      }));
 
-      console.log(`✓ OpenRouter 索引: ${Object.keys(index).length} 个模型`);
-      return index;
+      // 保存到缓存
+      this.saveCacheFile(this.cache);
+
+      console.log(`✓ OpenRouter 数据已更新: ${this.cache.length} 个模型`);
+      return this.cache;
+
     } catch (error) {
-      console.warn('⚠ OpenRouter 索引获取失败:', error.message);
-      return {};
+      console.warn('⚠ OpenRouter API 获取失败:', error.message);
+      
+      // 如果有旧缓存，使用它
+      if (fs.existsSync(CACHE_FILE)) {
+        try {
+          const raw = fs.readFileSync(CACHE_FILE, 'utf-8');
+          this.cache = JSON.parse(raw);
+          console.log(`✓ 使用旧缓存 (${this.cache.length} 个模型)`);
+          return this.cache;
+        } catch (e) {
+          // ignore
+        }
+      }
+
+      // 没有缓存，返回空数组
+      console.warn('⚠ 无可用的 OpenRouter 数据');
+      this.cache = [];
+      return this.cache;
     }
   }
 
   /**
-   * 在已知模型中查找（支持模糊匹配）
+   * 保存缓存文件
    */
-  static findInKnownModels(modelId, knownModels) {
-    // 精确匹配
-    if (knownModels[modelId]) {
-      return knownModels[modelId];
-    }
-
-    // 标准化名称（去除特殊字符）
-    const norm = modelId.toLowerCase().replace(/[-_.:]/g, '');
-
-    for (const [key, metadata] of Object.entries(knownModels)) {
-      const keyNorm = key.toLowerCase().replace(/[-_.:]/g, '');
-
-      // 完全匹配
-      if (norm === keyNorm) {
-        return metadata;
+  static saveCacheFile(data) {
+    try {
+      const dir = path.dirname(CACHE_FILE);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
       }
 
-      // 包含匹配
-      if (norm.includes(keyNorm) || keyNorm.includes(norm)) {
-        return metadata;
-      }
+      fs.writeFileSync(CACHE_FILE, JSON.stringify(data, null, 2), 'utf-8');
+    } catch (error) {
+      console.warn('⚠ 保存缓存失败:', error.message);
     }
-
-    // 分词匹配（例如 "deepseek-v4-pro" 匹配 "deepseek", "v4", "pro"）
-    for (const [key, metadata] of Object.entries(knownModels)) {
-      const keyNorm = key.toLowerCase().replace(/[-_.:]/g, '');
-      const parts = keyNorm.split(/(?<=\D)(?=\d)|(?<=\d)(?=\D)/).filter(p => p.length >= 2);
-
-      if (parts.length === 0) continue;
-
-      if (parts.every(p => norm.includes(p))) {
-        return metadata;
-      }
-    }
-
-    return null;
   }
 
   /**
-   * 在 OpenRouter 索引中查找
+   * 在 OpenRouter 数据中查找模型（支持模糊匹配）
    */
-  static findInOpenRouter(modelId, orIndex) {
-    if (!orIndex || Object.keys(orIndex).length === 0) {
+  static findInOpenRouter(modelId, orModels) {
+    if (!orModels || orModels.length === 0) {
       return null;
     }
 
     // 提取裸模型名（去除 provider 前缀）
     const bare = String(modelId).split('/').pop().toLowerCase();
 
-    // 精确匹配
-    if (orIndex[bare]) {
-      return orIndex[bare];
-    }
+    // 精确匹配 ID
+    let found = orModels.find(m => m.id.toLowerCase() === modelId.toLowerCase());
+    if (found) return found;
 
-    // 标准化匹配
+    // 匹配末尾部分
+    found = orModels.find(m => m.id.toLowerCase().endsWith('/' + bare));
+    if (found) return found;
+
+    // 标准化匹配（去除特殊字符）
     const norm = bare.replace(/[-_.:]/g, '');
+    
+    found = orModels.find(m => {
+      const idNorm = m.id.toLowerCase().replace(/[-_.:]/g, '');
+      return idNorm.includes(norm) || norm.includes(idNorm);
+    });
+    
+    if (found) return found;
 
-    for (const [key, metadata] of Object.entries(orIndex)) {
-      const keyNorm = key.toLowerCase().replace(/[-_.:]/g, '');
-      if (norm === keyNorm) {
-        return metadata;
-      }
-    }
+    // 按名称模糊匹配
+    found = orModels.find(m => {
+      const nameLower = m.name.toLowerCase();
+      return nameLower.includes(bare) || bare.includes(nameLower.replace(/\s+/g, ''));
+    });
 
-    return null;
+    return found || null;
   }
 
   /**
-   * 获取默认元数据
+   * 强制更新缓存
    */
-  static getDefaultMetadata() {
-    return {
-      context: 200000,
-      output: 32000,
-      vision: false,
-      thinking: false
-    };
+  static async updateCache() {
+    // 删除缓存
+    if (fs.existsSync(CACHE_FILE)) {
+      fs.unlinkSync(CACHE_FILE);
+    }
+    this.cache = null;
+
+    // 重新获取
+    return await this.getOpenRouterModels();
   }
 }

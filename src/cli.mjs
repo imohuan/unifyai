@@ -59,7 +59,7 @@ program
       // 更新元数据缓存
       if (options.updateMetadata) {
         console.log('\n🔄 更新元数据缓存...');
-        await MetadataFetcher.fetchOpenRouterIndex();
+        await MetadataFetcher.updateCache();
         console.log('✓ 元数据缓存已更新\n');
         return;
       }
