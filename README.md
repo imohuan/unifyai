@@ -77,6 +77,18 @@ node src/cli.mjs --models-only
 # 仅同步 MCP 配置
 node src/cli.mjs --mcp-only
 
+# 仅对指定平台同步 MCP（其他平台跳过 MCP，模型照常）
+node src/cli.mjs --mcp-only --mcp-platforms codex,opencode
+
+# 全局排除某些 MCP 服务器（所有平台都不同步）
+node src/cli.mjs --mcp-exclude node_env,github
+
+# 按平台排除 MCP 服务器（可多次指定，如排除 Codex 内置的 node_env）
+node src/cli.mjs --mcp-exclude-for codex=node_env --mcp-exclude-for opencode=some-server
+
+# 组合使用：只同步 opencode 的 MCP，且排除 filesystem
+node src/cli.mjs --mcp-only --mcp-platforms opencode --mcp-exclude filesystem
+
 # 预览模式（不实际写入）
 node src/cli.mjs --dry-run
 ```
@@ -84,16 +96,26 @@ node src/cli.mjs --dry-run
 ### 列出支持的平台
 
 ```bash
+# 人类可读（终端查看）
 node src/cli.mjs --list-platforms
 
-# 输出:
-# 📋 支持的平台:
-#   opencode     模型: ✓  MCP: ✓
-#   codex        模型: ✗  MCP: ✓
-#   claudecode   模型: ✗  MCP: ✓
-#   reasonix     模型: ✓  MCP: ✓
-#   penguin      模型: ✓  MCP: ✓
+# 结构化 JSON（给 UI / 脚本消费）
+node src/cli.mjs --list-platforms --json
+
+# JSON 输出示例:
+# {
+#   "platforms": [
+#     { "id": "opencode",   "name": "OpenCode",      "supportsModels": true,  "supportsMcp": true,  "modelStatus": "supported",        "mcpStatus": "supported",        "configPath": "~/.config/opencode/opencode.json", "configFormat": "jsonc" },
+#     { "id": "codex",      "name": "Codex",         "supportsModels": false, "supportsMcp": true,  "modelStatus": "not_supported",    "mcpStatus": "supported",        "configPath": "~/.codex/config.toml",              "configFormat": "toml" },
+#     { "id": "claudecode", "name": "Claude Code",   "supportsModels": false, "supportsMcp": true,  "modelStatus": "not_supported",    "mcpStatus": "supported",        "configPath": "~/.claude.json",                    "configFormat": "json" },
+#     { "id": "reasonix",   "name": "Reasonix",      "supportsModels": true,  "supportsMcp": true,  "modelStatus": "supported",        "mcpStatus": "not_implemented",  "configPath": "~/AppData/Roaming/reasonix/config.toml", "configFormat": "toml" },
+#     { "id": "penguin",    "name": "PenguinHarness","supportsModels": true,  "supportsMcp": true,  "modelStatus": "supported",        "mcpStatus": "supported",        "configPath": "~/.penguin/data/default_project/.project_config.toml", "configFormat": "toml" }
+#   ]
+# }
 ```
+
+**状态字段**（UI 徽章映射）：
+- `modelStatus` / `mcpStatus`: `'supported` → ✓ 绿 | `'not_supported` → ✗ 灰 | `'not_implemented` → ⚠ 黄
 
 ## 📖 命令行参数
 
@@ -104,12 +126,26 @@ node src/cli.mjs --list-platforms
   --platforms <list>         指定平台（逗号分隔，默认: opencode）
   --models-only              仅同步模型配置
   --mcp-only                 仅同步 MCP 配置
+  --mcp-platforms <list>     仅对指定平台同步 MCP（逗号分隔），未列出的平台跳过 MCP 同步
+  --mcp-exclude <names>      所有平台都排除的 MCP 服务器（逗号分隔）
+  --mcp-exclude-for <platform=names>  仅对指定平台排除的 MCP 服务器（可多次指定，如 --mcp-exclude-for codex=node_env,github）
   --dry-run                  预览模式，不实际写入
   --source <path>            源配置文件路径
   --list-platforms           列出支持的平台
-  --fetch-metadata           更新元数据缓存（从 OpenRouter 下载）
+  --json                    与 --list-platforms 一起使用，输出 JSON 格式
+  --update-metadata          更新元数据缓存（从 OpenRouter 下载）
   -h, --help                 显示帮助信息
 ```
+
+### MCP 同步过滤
+
+支持在同步前过滤 MCP 服务器，常用于排除某些平台内置的 MCP（如 Codex 的 `node_env`）：
+
+- **全局排除**（所有平台生效）：`--mcp-exclude node_env,github`
+- **按平台排除**（可多次指定）：`--mcp-exclude-for codex=node_env --mcp-exclude-for opencode=foo`
+- **平台白名单**（只对指定平台同步 MCP）：`--mcp-platforms codex,opencode`
+
+过滤优先级：平台白名单 > 按平台排除 > 全局排除。被排除的服务器会打印 `⊘ 已排除` 提示。
 
 ## 📁 Project Structure
 

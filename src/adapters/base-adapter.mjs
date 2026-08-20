@@ -7,12 +7,44 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 
 export class BaseAdapter {
-  constructor(platformName) {
+  constructor(platformName, platformId) {
     this.platformName = platformName;
+    // 平台标识（用于 CLI 参数），默认取 name 小写去空格；特例可显式传入
+    this.platformId = platformId || platformName.toLowerCase().replace(/\s+/g, '');
     this.supportsModels = false;
     this.supportsMcp = false;
+    // 能力状态：'supported' | 'not_supported' | 'not_implemented'
+    this.modelStatus = 'not_supported';
+    this.mcpStatus = 'not_supported';
+    // 配置文件格式：'json' | 'jsonc' | 'toml' | 'yaml'
+    this.configFormat = 'json';
+  }
+
+  /**
+   * 获取平台结构化信息（供 UI 消费）
+   * @returns {Object}
+   */
+  getInfo() {
+    const home = os.homedir();
+    const absPath = this.getConfigPath();
+    // 把绝对路径里的家目录替换为 ~，并把分隔符统一为 /
+    const displayPath = absPath.startsWith(home)
+      ? '~' + absPath.slice(home.length).replace(/\\/g, '/')
+      : absPath;
+
+    return {
+      id: this.platformId,
+      name: this.platformName,
+      supportsModels: this.supportsModels,
+      modelStatus: this.modelStatus,
+      supportsMcp: this.supportsMcp,
+      mcpStatus: this.mcpStatus,
+      configPath: displayPath,
+      configFormat: this.configFormat
+    };
   }
 
   /**

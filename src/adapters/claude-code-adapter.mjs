@@ -15,6 +15,9 @@ export class ClaudeCodeAdapter extends BaseAdapter {
     super('Claude Code');
     this.supportsModels = false; // opencodex 已支持
     this.supportsMcp = true;
+    this.modelStatus = 'not_supported';
+    this.mcpStatus = 'supported';
+    this.configFormat = 'json';
   }
 
   getConfigPath() {

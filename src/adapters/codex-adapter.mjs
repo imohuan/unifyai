@@ -16,6 +16,9 @@ export class CodexAdapter extends BaseAdapter {
     super('Codex');
     this.supportsModels = false; // opencodex 已支持
     this.supportsMcp = true;
+    this.modelStatus = 'not_supported';
+    this.mcpStatus = 'supported';
+    this.configFormat = 'toml';
   }
 
   getConfigPath() {

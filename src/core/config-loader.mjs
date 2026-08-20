@@ -38,9 +38,22 @@ export class ConfigLoader {
     // 优先尝试从 opencodex 代理服务获取统一模型列表
     const port = config.port || 10100;
     const proxyUrl = `http://localhost:${port}/v1/models`;
-    
+
+    // 从 opencodex 配置中读取客户端 API key（config.apiKeys），请求代理时携带
+    // 参考: https://github.com/lidge-jun/opencodex —— 代理自身鉴权使用 x-opencodex-api-key 请求头
+    // 本机 127.0.0.1 模式免认证；绑定 0.0.0.0 / 设置 OPENCODEX_API_AUTH_TOKEN 后必须携带。
+    let proxyApiKey = null;
+    if (Array.isArray(config.apiKeys) && config.apiKeys.length > 0) {
+      proxyApiKey = config.apiKeys[0].key || null;
+    } else if (process.env.OPENCODEX_API_AUTH_TOKEN) {
+      proxyApiKey = process.env.OPENCODEX_API_AUTH_TOKEN;
+    }
+    if (proxyApiKey) {
+      console.log(`✓ 已携带 OpenCodex 代理 API key (${proxyApiKey.slice(0, 12)}...)`);
+    }
+
     let models = [];
-    const proxyResult = await this.tryFetchFromProxy(proxyUrl, providers);
+    const proxyResult = await this.tryFetchFromProxy(proxyUrl, providers, proxyApiKey);
     
     if (proxyResult.success) {
       console.log(`\n✓ 从 OpenCodex 代理服务获取模型列表 (http://localhost:${port})`);
@@ -136,18 +149,30 @@ export class ConfigLoader {
    * 尝试从 OpenCodex 代理服务获取统一模型列表
    * @param {string} proxyUrl - 代理服务的 /v1/models URL
    * @param {Object} providers - provider 配置对象
+   * @param {string|null} apiKey - OpenCodex 代理自身的 API key（来自 config.apiKeys 或 OPENCODEX_API_AUTH_TOKEN）
    * @returns {Promise<{success: boolean, models: Array}>}
    */
-  static async tryFetchFromProxy(proxyUrl, providers) {
+  static async tryFetchFromProxy(proxyUrl, providers, apiKey = null) {
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 3000); // 3秒超时
 
+      const headers = {
+        'Content-Type': 'application/json'
+      };
+
+      // OpenCodex 代理鉴权: 绑定非 loopback 或设置 OPENCODEX_API_AUTH_TOKEN 后,
+      // 每个客户端请求都必须携带 x-opencodex-api-key 头。
+      // 参考: https://github.com/lidge-jun/opencodex
+      if (apiKey) {
+        headers['x-opencodex-api-key'] = apiKey;
+        // 兼容 OpenAI 风格的 Bearer 鉴权
+        headers['Authorization'] = `Bearer ${apiKey}`;
+      }
+
       const response = await fetch(proxyUrl, {
         method: 'GET',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers,
         signal: controller.signal
       });
 

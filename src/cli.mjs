@@ -8,11 +8,16 @@
 import { Command } from 'commander';
 import path from 'node:path';
 import os from 'node:os';
+import { createRequire } from 'node:module';
 import { ConfigLoader } from './core/config-loader.mjs';
 import { MetadataFetcher } from './core/metadata-fetcher.mjs';
 import { OpenCodeAdapter } from './adapters/opencode-adapter.mjs';
 import { CodexAdapter } from './adapters/codex-adapter.mjs';
 import { ClaudeCodeAdapter } from './adapters/claude-code-adapter.mjs';
+
+// 从 package.json 读取版本号（单一来源，避免与 package.json 手动同步）
+const require = createRequire(import.meta.url);
+const pkg = require('../package.json');
 import { ReasonixAdapter } from './adapters/reasonix-adapter.mjs';
 import { PenguinAdapter } from './adapters/penguin-adapter.mjs';
 
@@ -27,31 +32,56 @@ const ADAPTERS = {
 
 const program = new Command();
 
+// 收集多次指定的 option（如 --mcp-exclude-for codex=node_env --mcp-exclude-for opencode=foo）
+function collect(value, previous) {
+  return previous.concat([value]);
+}
+
 program
   .name('unifyai')
   .description('同步 AI 配置到多个平台')
-  .version('1.0.2', '-v, --version', '显示版本号');
+  .version(pkg.version, '-v, --version', '显示版本号');
 
 program
   .option('--all', '同步到所有平台')
   .option('--platforms <list>', '指定平台（逗号分隔）', 'opencode,codex,claudecode,reasonix,penguin')
   .option('--models-only', '仅同步模型配置')
   .option('--mcp-only', '仅同步 MCP 配置')
+  .option('--mcp-platforms <list>', '仅对指定平台同步 MCP（逗号分隔），其他平台跳过 MCP')
+  .option('--mcp-exclude <names>', '所有平台都排除的 MCP 服务器（逗号分隔）')
+  .option('--mcp-exclude-for <platform=names>', '仅对指定平台排除的 MCP 服务器（可多次指定，如 --mcp-exclude-for codex=node_env,github）', collect, [])
   .option('--dry-run', '预览模式，不实际写入')
   .option('--source <path>', '源配置文件路径', path.join(os.homedir(), '.opencodex', 'config.json'))
   .option('--list-platforms', '列出支持的平台')
+  .option('--json', '与 --list-platforms 一起使用时输出 JSON 格式')
   .option('--update-metadata', '更新元数据缓存（从 OpenRouter 获取）')
   .option('--verbose', '显示详细信息')
   .action(async (options) => {
     try {
       // 列出支持的平台
       if (options.listPlatforms) {
-        console.log('\n📋 支持的平台:\n');
-        for (const [name, AdapterClass] of Object.entries(ADAPTERS)) {
+        const platforms = Object.entries(ADAPTERS).map(([id, AdapterClass]) => {
           const adapter = new AdapterClass();
-          const modelSupport = adapter.supportsModels ? '✓' : '✗';
-          const mcpSupport = adapter.supportsMcp ? '✓' : '✗';
-          console.log(`  ${name.padEnd(12)} 模型: ${modelSupport}  MCP: ${mcpSupport}`);
+          return adapter.getInfo();
+        });
+
+        if (options.json) {
+          console.log(JSON.stringify({ platforms }, null, 2));
+          return;
+        }
+
+        // 人类可读输出
+        const STATUS_ICON = {
+          supported:        '✓ ',
+          not_supported:    '✗ ',
+          not_implemented:  '⚠ '
+        };
+        console.log('\n📋 支持的平台:\n');
+        for (const p of platforms) {
+          console.log(`  ${p.id.padEnd(12)} 模型: ${STATUS_ICON[p.modelStatus]} MCP: ${STATUS_ICON[p.mcpStatus]}`);
+          if (p.mcpStatus === 'not_implemented') {
+            console.log(`             ⚠ MCP 同步未实现（已跳过）`);
+          }
         }
         console.log();
         return;
@@ -119,6 +149,26 @@ program
         console.log('⚠️  预览模式：不会实际写入文件\n');
       }
 
+      // 解析 MCP 排除规则
+      const globalMcpExclude = new Set(
+        (options.mcpExclude || '').split(',').map(s => s.trim()).filter(Boolean)
+      );
+      const perPlatformMcpExclude = {};
+      const excludeForList = options.mcpExcludeFor || [];
+      for (const entry of excludeForList) {
+        const eqIdx = entry.indexOf('=');
+        if (eqIdx === -1) continue;
+        const platform = entry.slice(0, eqIdx).trim();
+        const names = entry.slice(eqIdx + 1).split(',').map(s => s.trim()).filter(Boolean);
+        if (!perPlatformMcpExclude[platform]) perPlatformMcpExclude[platform] = new Set();
+        names.forEach(n => perPlatformMcpExclude[platform].add(n));
+      }
+
+      // MCP 平台白名单（--mcp-platforms），未指定则全部平台都同步 MCP
+      const mcpPlatforms = options.mcpPlatforms
+        ? options.mcpPlatforms.split(',').map(p => p.trim())
+        : null;
+
       // 统计
       let successCount = 0;
       let failCount = 0;
@@ -136,6 +186,26 @@ program
 
         const adapter = new AdapterClass();
 
+        // 按平台过滤 MCP 配置（--models-only 时 adapter 内部会跳过 MCP，这里过滤无副作用）
+        let platformMcp = mcpServers;
+        const excludedNames = [];
+        // 平台白名单检查
+        if (mcpPlatforms && !mcpPlatforms.includes(platformName)) {
+          platformMcp = {};
+          console.log(`\n  ⊘ ${platformName}: MCP 同步已跳过（不在 --mcp-platforms 白名单）`);
+        } else {
+          const excludeSet = perPlatformMcpExclude[platformName] || new Set();
+          const filtered = {};
+          for (const [name, server] of Object.entries(mcpServers)) {
+            if (globalMcpExclude.has(name) || excludeSet.has(name)) {
+              excludedNames.push(name);
+              continue;
+            }
+            filtered[name] = server;
+          }
+          platformMcp = filtered;
+        }
+
         try {
           if (options.dryRun) {
             console.log(`\n📦 [预览] ${platformName}...`);
@@ -146,7 +216,12 @@ program
             }
             
             if (!options.modelsOnly && adapter.supportsMcp) {
-              console.log(`  → 将同步 ${Object.keys(mcpServers).length} 个 MCP 服务器`);
+              const mcpCount = Object.keys(platformMcp).length;
+              if (excludedNames.length > 0) {
+                console.log(`  → 将同步 ${mcpCount} 个 MCP 服务器 (排除 ${excludedNames.join(', ')})`);
+              } else {
+                console.log(`  → 将同步 ${mcpCount} 个 MCP 服务器`);
+              }
             }
             
             successCount++;
@@ -154,13 +229,16 @@ program
             await adapter.sync(
               {
                 models: config.models,
-                mcp: mcpServers
+                mcp: platformMcp
               },
               {
                 modelsOnly: options.modelsOnly,
                 mcpOnly: options.mcpOnly
               }
             );
+            if (excludedNames.length > 0) {
+              console.log(`  ⊘ 已排除 MCP: ${excludedNames.join(', ')}`);
+            }
             successCount++;
           }
         } catch (error) {

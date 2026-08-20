@@ -20,6 +20,9 @@ export class OpenCodeAdapter extends BaseAdapter {
     super('OpenCode');
     this.supportsModels = true;
     this.supportsMcp = true;
+    this.modelStatus = 'supported';
+    this.mcpStatus = 'supported';
+    this.configFormat = 'jsonc';
   }
 
   getConfigPath() {

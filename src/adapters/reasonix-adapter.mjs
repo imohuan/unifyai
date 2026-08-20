@@ -15,6 +15,9 @@ export class ReasonixAdapter extends BaseAdapter {
     super('Reasonix');
     this.supportsModels = true;
     this.supportsMcp = true;
+    this.modelStatus = 'supported';
+    this.mcpStatus = 'not_implemented'; // syncMcp 是 TODO，同步时跳过
+    this.configFormat = 'toml';
   }
 
   getConfigPath() {

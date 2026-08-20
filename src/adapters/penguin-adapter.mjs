@@ -15,9 +15,12 @@ import { BaseAdapter } from './base-adapter.mjs';
 
 export class PenguinAdapter extends BaseAdapter {
   constructor() {
-    super('PenguinHarness');
+    super('PenguinHarness', 'penguin'); // 显式传 id，CLI 参数用 'penguin'
     this.supportsModels = true;
     this.supportsMcp = true; // PenguinHarness 支持 MCP
+    this.modelStatus = 'supported';
+    this.mcpStatus = 'supported';
+    this.configFormat = 'toml';
   }
 
   getConfigPath() {
