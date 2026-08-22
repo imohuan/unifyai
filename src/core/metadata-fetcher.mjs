@@ -23,11 +23,18 @@ export class MetadataFetcher {
   /**
    * 增强模型元数据
    * @param {Array} models - 模型列表
+   * @param {Array} [orModels] - 可选的 OpenRouter 数据（测试注入用）
+   * @param {Object} [options] - 附加选项
+   * @param {boolean} [options.visionOverride] - 强制把所有模型标记为支持视觉
    * @returns {Promise<Array>} 增强后的模型列表
    */
-  static async enrich(models) {
-    // 加载或获取 OpenRouter 数据
-    const orModels = await this.getOpenRouterModels();
+  static async enrich(models, orModels, options = {}) {
+    const { visionOverride = false } = options;
+
+    // 加载或获取 OpenRouter 数据（未注入时自动获取）
+    if (!orModels) {
+      orModels = await this.getOpenRouterModels();
+    }
 
     for (const model of models) {
       // 从 OpenRouter 查找元数据
@@ -47,6 +54,10 @@ export class MetadataFetcher {
         if (model.supportsThinking == null) {
           model.supportsThinking = metadata.reasoning;
         }
+        // 手动开启视觉（--enable-vision）优先于 OpenRouter 数据
+        if (visionOverride) {
+          model.supportsVision = true;
+        }
       } else {
         // 使用默认值（只在未设置时）
         if (model.contextWindow == null) {
@@ -60,6 +71,10 @@ export class MetadataFetcher {
         }
         if (model.supportsThinking == null) {
           model.supportsThinking = false;
+        }
+        // 手动开启视觉（--enable-vision）优先于默认值
+        if (visionOverride) {
+          model.supportsVision = true;
         }
       }
     }
@@ -173,31 +188,88 @@ export class MetadataFetcher {
     // 提取裸模型名（去除 provider 前缀）
     const bare = String(modelId).split('/').pop().toLowerCase();
 
-    // 精确匹配 ID
+    // 1. 精确匹配完整 ID
     let found = orModels.find(m => m.id.toLowerCase() === modelId.toLowerCase());
     if (found) return found;
 
-    // 匹配末尾部分
+    // 2. 匹配末尾部分（裸名匹配任意 provider 前缀）
     found = orModels.find(m => m.id.toLowerCase().endsWith('/' + bare));
     if (found) return found;
 
-    // 标准化匹配（去除特殊字符）
-    const norm = bare.replace(/[-_.:]/g, '');
-    
-    found = orModels.find(m => {
-      const idNorm = m.id.toLowerCase().replace(/[-_.:]/g, '');
-      return idNorm.includes(norm) || norm.includes(idNorm);
-    });
-    
+    // 3. 标准化匹配（去除特殊字符，双向包含判断）
+    found = this.matchByNormalized(bare, orModels);
     if (found) return found;
 
-    // 按名称模糊匹配
+    // 4. 版本后缀剥离匹配：deepseek-v4-flash-ga-260731 → deepseek-v4-flash
+    //    先尝试去掉 "-ga-<日期>" 形式的后缀
+    const gaMatch = bare.match(/^(.+?)-ga-\d+$/);
+    if (gaMatch) {
+      const baseName = gaMatch[1];
+      // 优先匹配 <base>-latest：带版本日期的模型通常对应最新发布
+      found = orModels.find(m => m.id.toLowerCase().endsWith('/' + baseName + '-latest'));
+      if (found) return found;
+
+      found = orModels.find(m => m.id.toLowerCase().endsWith('/' + baseName));
+      if (found) return found;
+      found = this.matchByNormalized(baseName, orModels);
+      if (found) return found;
+    }
+
+    // 5. 依次剥离尾部版本/日期片段，取最长的匹配结果
+    found = this.matchByStrippingVersionSuffix(bare, orModels);
+    if (found) return found;
+
+    // 6. 按名称模糊匹配（只有完整裸名包含关系，不做反向包含，避免别名错配）
     found = orModels.find(m => {
       const nameLower = m.name.toLowerCase();
-      return nameLower.includes(bare) || bare.includes(nameLower.replace(/\s+/g, ''));
+      return nameLower.includes(bare);
     });
 
     return found || null;
+  }
+
+  /**
+   * 标准化匹配（去除特殊字符，双向包含判断）
+   */
+  static matchByNormalized(bare, orModels) {
+    const norm = bare.replace(/[-_.:]/g, '');
+
+    return orModels.find(m => {
+      const idNorm = m.id.toLowerCase().replace(/[-_.:]/g, '');
+      return idNorm.includes(norm) || norm.includes(idNorm);
+    });
+  }
+
+  /**
+   * 依次剥离尾部版本/日期片段后匹配
+   * 例: deepseek-v4-flash-ga-260731 → deepseek-v4-flash-ga → deepseek-v4-flash
+   * 只做"裸名是 OpenRouter ID 后缀的一部分"的单向匹配，避免错配
+   */
+  static matchByStrippingVersionSuffix(bare, orModels) {
+    const parts = bare.split('-');
+    // 从尾部依次剥离，至少保留 2 段
+    for (let i = parts.length - 1; i >= 2; i--) {
+      const candidate = parts.slice(0, i).join('-');
+
+      // 优先匹配 <candidate>-latest
+      let found = orModels.find(m => m.id.toLowerCase().endsWith('/' + candidate + '-latest'));
+      if (found) return found;
+
+      // 候选名必须能作为 OpenRouter ID 的后缀（provider/... 前缀）
+      found = orModels.find(m => m.id.toLowerCase().endsWith('/' + candidate));
+      if (found) return found;
+
+      // 标准化后单向包含匹配
+      const norm = candidate.replace(/[-_.:]/g, '');
+      if (norm.length < 4) continue;
+      found = orModels.find(m => {
+        const idNorm = m.id.toLowerCase().replace(/[-_.:]/g, '');
+        return idNorm.includes(norm);
+      });
+      if (found) return found;
+    }
+
+    return null;
   }
 
   /**

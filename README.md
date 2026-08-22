@@ -91,6 +91,9 @@ node src/cli.mjs --mcp-only --mcp-platforms opencode --mcp-exclude filesystem
 
 # 预览模式（不实际写入）
 node src/cli.mjs --dry-run
+
+# 强制把所有模型标记为支持视觉（优先于 OpenRouter 元数据）
+node src/cli.mjs --enable-vision
 ```
 
 ### 列出支持的平台

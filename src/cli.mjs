@@ -55,6 +55,7 @@ program
   .option('--list-platforms', '列出支持的平台')
   .option('--json', '与 --list-platforms 一起使用时输出 JSON 格式')
   .option('--update-metadata', '更新元数据缓存（从 OpenRouter 获取）')
+  .option('--enable-vision', '强制把所有模型标记为支持视觉（优先于 OpenRouter 元数据）')
   .option('--verbose', '显示详细信息')
   .action(async (options) => {
     try {
@@ -109,7 +110,9 @@ program
       // 增强模型元数据
       if (!options.mcpOnly && config.models.length > 0) {
         console.log('\n🔍 增强模型元数据...');
-        config.models = await MetadataFetcher.enrich(config.models);
+        config.models = await MetadataFetcher.enrich(config.models, null, {
+          visionOverride: options.enableVision === true
+        });
         console.log(`✓ ${config.models.length} 个模型元数据已增强`);
       }
 
