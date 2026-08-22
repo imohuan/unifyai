@@ -75,8 +75,10 @@ export class PenguinAdapter extends BaseAdapter {
         
         newLines.push(`context_window = ${model.contextWindow || 200000}`);
         
-        if (model.clientType) {
-          newLines.push(`client_type = "${model.clientType}"`);
+        // client_type 从 providerConfig.adapter 转换而来（model 上没有 clientType 字段）
+        const clientType = this.toClientType(model.providerConfig && model.providerConfig.adapter);
+        if (clientType) {
+          newLines.push(`client_type = "${clientType}"`);
         }
         
         if (model.maxOutputTokens) {
@@ -115,6 +117,29 @@ export class PenguinAdapter extends BaseAdapter {
     this.writeConfig(newLines.join('\n'));
     
     console.log(`    写入 ${models.length} 个模型配置`);
+  }
+
+  /**
+   * 将 opencodex provider 的 adapter 转换为 PenguinHarness 的 client_type
+   * 协议对应关系：
+   *   openai-chat      -> OpenAI Chat Completions  (/chat/completions)
+   *   openai-responses -> OpenAI Responses        (/responses)
+   *   anthropic        -> Anthropic Messages      (/v1/messages)
+   * 其他 adapter（google/kiro/cursor 等）无法映射时返回 null，不写入 client_type
+   * @param {string} adapter - opencodex provider 的 adapter 值
+   * @returns {string|null}
+   */
+  toClientType(adapter) {
+    if (!adapter) return null;
+    switch (adapter) {
+      case 'openai-chat':
+      case 'openai-responses':
+        return adapter;
+      case 'anthropic':
+        return 'ant-messages';
+      default:
+        return null;
+    }
   }
 
   /**
