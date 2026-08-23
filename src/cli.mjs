@@ -53,7 +53,8 @@ program
   .option('--dry-run', '预览模式，不实际写入')
   .option('--source <path>', '源配置文件路径', path.join(os.homedir(), '.opencodex', 'config.json'))
   .option('--list-platforms', '列出支持的平台')
-  .option('--json', '与 --list-platforms 一起使用时输出 JSON 格式')
+  .option('--list-models', '仅列出 OpenCodex 代理的模型（不执行同步）')
+  .option('--json', '与 --list-platforms / --list-models 一起使用时输出 JSON 格式')
   .option('--update-metadata', '更新元数据缓存（从 OpenRouter 获取）')
   .option('--enable-vision', '强制把所有模型标记为支持视觉（优先于 OpenRouter 元数据）')
   .option('--verbose', '显示详细信息')
@@ -93,6 +94,91 @@ program
         console.log('\n🔄 更新元数据缓存...');
         await MetadataFetcher.updateCache();
         console.log('✓ 元数据缓存已更新\n');
+        return;
+      }
+
+      // 仅列出 OpenCodex 代理的模型（--list-models [--json]）
+      if (options.listModels) {
+        if (options.json) {
+          // JSON 模式：静音 console，保证 stdout 只输出 JSON（tryFetchFromProxy/enrich 内部有日志）
+          const origLog = console.log;
+          const origWarn = console.warn;
+          console.log = () => {};
+          console.warn = () => {};
+          try {
+            const result = await ConfigLoader.fetchOpenCodexModels(options.source, { quiet: true });
+            const orModels = await MetadataFetcher.getOpenRouterModels();
+            await MetadataFetcher.enrich(result.models, orModels, {
+              visionOverride: options.enableVision === true
+            });
+            const matchedCount = result.models.filter(m =>
+              MetadataFetcher.findInOpenRouter(m.modelId, orModels)
+            ).length;
+            const slim = {
+              ...result,
+              orMatchedCount: matchedCount,
+              orTotal: orModels.length,
+              models: result.models.map(m => ({
+                provider: m.provider,
+                modelId: m.modelId,
+                displayName: m.displayName,
+                contextWindow: m.contextWindow,
+                maxOutputTokens: m.maxOutputTokens,
+                supportsVision: m.supportsVision,
+                supportsThinking: m.supportsThinking
+              }))
+            };
+            console.log = origLog;
+            console.warn = origWarn;
+            console.log(JSON.stringify(slim, null, 2));
+          } catch (e) {
+            console.log = origLog;
+            console.warn = origWarn;
+            console.log(JSON.stringify({ error: e.message, degraded: true, models: [], count: 0 }, null, 2));
+          }
+          return;
+        }
+
+        const result = await ConfigLoader.fetchOpenCodexModels(options.source, { quiet: true });
+        // 人类可读输出
+        console.log('\n🚀 AI Config Sync - 模型列表');
+        console.log(`📂 加载配置: ${result.source}`);
+        console.log(`✓ 加载配置: ${result.providerCount} 个 provider`);
+        if (result.hasApiKey) {
+          console.log(`✓ 已携带 OpenCodex 代理 API key (${result.apiKeyPreview})`);
+        }
+        if (result.degraded) {
+          console.log(`\n⚠ ${result.degradedReason}`);
+          return;
+        }
+        console.log(`\n✓ 从 OpenCodex 代理服务获取模型列表 (${result.proxyUrl})`);
+        console.log(`  ✓ 获取到 ${result.rawCount} 个模型，过滤后 ${result.count} 个（来自 ${result.enabledProviderCount} 个启用 provider）`);
+
+        // 增强模型元数据（匹配 OpenRouter 缓存：context / vision / reasoning）
+        const orModels = await MetadataFetcher.getOpenRouterModels();
+        await MetadataFetcher.enrich(result.models, orModels, {
+          visionOverride: options.enableVision === true
+        });
+        const matchedCount = result.models.filter(m =>
+          MetadataFetcher.findInOpenRouter(m.modelId, orModels)
+        ).length;
+        console.log(`🔍 匹配 OpenRouter 元数据: ${matchedCount}/${result.count} 个模型命中\n`);
+
+        const grouped = {};
+        for (const model of result.models) {
+          if (!grouped[model.provider]) grouped[model.provider] = [];
+          grouped[model.provider].push(model);
+        }
+        for (const [provider, models] of Object.entries(grouped)) {
+          console.log(`  ${provider} (${models.length} 个模型):`);
+          for (const model of models) {
+            const reasoning = model.supportsThinking ? '🧠' : '  ';
+            const vision = model.supportsVision ? '👁️' : '  ';
+            const ctx = model.contextWindow ? `${(model.contextWindow / 1000).toFixed(0)}K` : '???';
+            console.log(`    ${reasoning}${vision} ${model.modelId.padEnd(40)} [${ctx.padStart(6)}]`);
+          }
+        }
+        console.log(`\n✓ 总计: ${result.count} 个模型`);
         return;
       }
 

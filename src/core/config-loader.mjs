@@ -175,6 +175,88 @@ export class ConfigLoader {
   }
 
   /**
+   * 仅获取 OpenCodex 代理的模型列表（供 --list-models 使用，不加载 MCP、不执行同步）。
+   * 与 load() 中「优先从 opencodex 代理获取统一模型列表」的逻辑一致：
+   *   ① 读 config.json → providers / disabledModels / apiKeys
+   *   ② GET http://localhost:{port}/v1/models（携带 x-opencodex-api-key，3s 超时）
+   *   ③ 过滤 disabled provider 与 disabledModels
+   * @param {string} [configPath] - 配置文件路径
+   * @param {Object} [opts] - { quiet: true 时静默（日志不输出，供 --json 使用） }
+   * @returns {Promise<Object>} 结构化结果（含 models、rawCount、degraded 等）
+   */
+  static async fetchOpenCodexModels(configPath, { quiet = false } = {}) {
+    if (!configPath) {
+      configPath = path.join(os.homedir(), '.opencodex', 'config.json');
+    }
+    if (!fs.existsSync(configPath)) {
+      throw new Error(`配置文件不存在: ${configPath}`);
+    }
+    const raw = fs.readFileSync(configPath, 'utf-8');
+    const config = JSON.parse(raw);
+
+    const providers = config.providers || {};
+    const disabledModels = Array.isArray(config.disabledModels) ? config.disabledModels : [];
+    const port = config.port || 10100;
+    const proxyUrl = `http://localhost:${port}/v1/models`;
+
+    let proxyApiKey = null;
+    if (Array.isArray(config.apiKeys) && config.apiKeys.length > 0) {
+      proxyApiKey = config.apiKeys[0].key || null;
+    } else if (process.env.OPENCODEX_API_AUTH_TOKEN) {
+      proxyApiKey = process.env.OPENCODEX_API_AUTH_TOKEN;
+    }
+
+    const log = quiet ? () => {} : (msg) => console.log(msg);
+    const warn = quiet ? () => {} : (msg) => console.warn(msg);
+
+    if (proxyApiKey) {
+      log(`✓ 已携带 OpenCodex 代理 API key (${proxyApiKey.slice(0, 12)}...)`);
+    }
+
+    const proxyResult = await this.tryFetchFromProxy(proxyUrl, providers, proxyApiKey);
+
+    let models = [];
+    let degraded = false;
+    let degradedReason = null;
+
+    if (proxyResult.success) {
+      log(`\n✓ 从 OpenCodex 代理服务获取模型列表 (http://localhost:${port})`);
+      log(`  ✓ 获取到 ${proxyResult.models.length} 个模型\n`);
+      models = proxyResult.models;
+      // 代理返回的模型同样过滤：disabled provider + disabledModels
+      const enabledProviderNames = new Set(
+        Object.entries(providers).filter(([, cfg]) => !cfg.disabled).map(([n]) => n)
+      );
+      const beforeFilter = models.length;
+      models = models.filter(m => enabledProviderNames.has(m.provider));
+      models = this.filterDisabledModels(models, disabledModels);
+      const removed = beforeFilter - models.length;
+      if (removed > 0) {
+        log(`  ⊘ 过滤 disabled provider / disabledModels: ${removed} 个模型`);
+      }
+    } else {
+      degraded = true;
+      degradedReason = 'OpenCodex 代理服务不可用（请先启动，或检查 localhost:${port}）';
+      warn(`\n⚠ ${degradedReason}`);
+    }
+
+    return {
+      source: configPath,
+      proxyUrl,
+      port,
+      hasApiKey: !!proxyApiKey,
+      apiKeyPreview: proxyApiKey ? `${proxyApiKey.slice(0, 12)}...` : null,
+      providerCount: Object.keys(providers).length,
+      enabledProviderCount: Object.entries(providers).filter(([, c]) => !c.disabled).length,
+      rawCount: proxyResult.models.length,
+      degraded,
+      degradedReason,
+      models,
+      count: models.length,
+    };
+  }
+
+  /**
    * 尝试从 OpenCodex 代理服务获取统一模型列表
    * @param {string} proxyUrl - 代理服务的 /v1/models URL
    * @param {Object} providers - provider 配置对象
