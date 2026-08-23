@@ -9,7 +9,7 @@
   },
   "scripts": {
     "start": "node src/cli.mjs",
-    "test": "node --test test/metadata-fetcher.test.mjs test/metadata-fetcher-vision.test.mjs"
+    "test": "node --test test/metadata-fetcher.test.mjs test/metadata-fetcher-vision.test.mjs test/fallback-filter.test.mjs test/proxy-test.mjs"
   },
   "keywords": [
     "ai",

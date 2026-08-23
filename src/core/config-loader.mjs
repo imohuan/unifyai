@@ -33,6 +33,10 @@ export class ConfigLoader {
     // 提取 providers
     const providers = config.providers || {};
 
+    // disabledModels: 需要过滤掉的模型（裸名，如 "gpt-5.5"）
+    // 匹配时按 providers[key] + "/" + 模型名 比较，例如 "IMOHUAN/deepseek-v4-flash"
+    const disabledModels = Array.isArray(config.disabledModels) ? config.disabledModels : [];
+
     console.log(`✓ 加载配置: ${Object.keys(providers).length} 个 provider`);
 
     // 优先尝试从 opencodex 代理服务获取统一模型列表
@@ -59,18 +63,43 @@ export class ConfigLoader {
       console.log(`\n✓ 从 OpenCodex 代理服务获取模型列表 (http://localhost:${port})`);
       console.log(`  ✓ 获取到 ${proxyResult.models.length} 个模型\n`);
       models = proxyResult.models;
+      // 代理返回的模型同样过滤：disabled provider + disabledModels
+      const enabledProviderNames = new Set(
+        Object.entries(providers).filter(([, cfg]) => !cfg.disabled).map(([n]) => n)
+      );
+      const beforeFilter = models.length;
+      models = models.filter(m => enabledProviderNames.has(m.provider));
+      models = this.filterDisabledModels(models, disabledModels);
+      const removed = beforeFilter - models.length;
+      if (removed > 0) {
+        console.log(`  ⊘ 过滤 disabled provider / disabledModels: ${removed} 个模型`);
+      }
     } else {
       console.log(`\n⚠ OpenCodex 代理服务不可用，降级到逐个 provider 获取`);
       
-      // 降级：逐个 provider 获取
-      for (const [providerName, providerConfig] of Object.entries(providers)) {
+      // 降级：逐个 provider 获取（跳过 disabled 的 provider）
+      const enabledProviders = Object.entries(providers).filter(
+        ([name, cfg]) => !cfg.disabled
+      );
+      const skippedDisabled = Object.keys(providers).length - enabledProviders.length;
+      if (skippedDisabled > 0) {
+        console.log(`  ⊘ 跳过 ${skippedDisabled} 个 disabled provider: ${enabledProviders.map(([n]) => n).join(', ') || '(无)'}`);
+      }
+
+      for (const [providerName, providerConfig] of enabledProviders) {
         console.log(`\n📡 获取 ${providerName} 的模型列表...`);
         
         const providerModels = await this.fetchProviderModels(providerName, providerConfig);
         
         if (providerModels.length > 0) {
-          console.log(`  ✓ 获取到 ${providerModels.length} 个模型`);
-          models.push(...providerModels);
+          // 过滤该 provider 下 disabledModels 中的模型
+          const filtered = this.filterDisabledModels(providerModels, disabledModels);
+          const removed = providerModels.length - filtered.length;
+          if (removed > 0) {
+            console.log(`  ⊘ 过滤 disabledModels: ${removed} 个模型`);
+          }
+          console.log(`  ✓ 获取到 ${filtered.length} 个模型`);
+          models.push(...filtered);
         } else {
           console.warn(`  ⚠ ${providerName} 没有返回模型`);
         }
@@ -179,6 +208,7 @@ export class ConfigLoader {
       clearTimeout(timeoutId);
 
       if (!response.ok) {
+        console.warn(`  ⚠ OpenCodex 代理返回异常状态: HTTP ${response.status} ${response.statusText}`);
         return { success: false, models: [] };
       }
 
@@ -249,9 +279,41 @@ export class ConfigLoader {
 
       return { success: true, models };
     } catch (error) {
-      // 静默失败，返回 success: false
+      // 失败原因分类（方便用户诊断"为什么代理不可用"）
+      const name = error?.name || '';
+      const causeCode = error?.cause?.code || '';
+      let reason = error?.message || String(error);
+      if (name === 'AbortError' || reason.includes('abort')) {
+        reason = `请求超时（3s 内代理未响应 ${proxyUrl}）`;
+      } else if (causeCode === 'ECONNREFUSED' || reason.includes('ECONNREFUSED')) {
+        reason = `连接被拒绝：${proxyUrl} 没有服务在监听（代理进程未启动？）`;
+      } else if (causeCode === 'ENOTFOUND' || causeCode === 'EAI_AGAIN' || reason.includes('ENOTFOUND')) {
+        reason = `DNS 解析失败：${proxyUrl}`;
+      }
+      console.warn(`  ⚠ OpenCodex 代理请求失败: ${name}${causeCode ? ' [' + causeCode + ']' : ''}: ${reason}`);
       return { success: false, models: [] };
     }
+  }
+
+  /**
+   * 过滤 disabledModels 中的模型
+   * disabledModels 存的是裸名（如 "gpt-5.5"），匹配时按
+   * providers[key] + "/" + 模型名 比较，例如 "IMOHUAN/deepseek-v4-flash"
+   * @param {Array} models - 统一格式的模型列表
+   * @param {Array} disabledModels - 裸名数组
+   * @returns {Array}
+   */
+  static filterDisabledModels(models, disabledModels) {
+    if (!Array.isArray(disabledModels) || disabledModels.length === 0) return models;
+    // 构造匹配集合（裸名）
+    const disabledSet = new Set(disabledModels);
+    return models.filter(m => {
+      // 裸名直接命中（如 gpt-5.5）
+      if (disabledSet.has(m.modelId)) return false;
+      // provider/模型名 命中（如 IMOHUAN/deepseek-v4-flash）
+      if (disabledSet.has(`${m.provider}/${m.modelId}`)) return false;
+      return true;
+    });
   }
 
   /**
