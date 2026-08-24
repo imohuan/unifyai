@@ -111,4 +111,62 @@ export class CodexAdapter extends BaseAdapter {
     const toml = jsonToToml(config);
     this.writeConfig(toml);
   }
+
+  /**
+   * 删除 config.mcp_servers 中不在 keepNames 里的条目（force-mcp 重置用）
+   * Codex 配置文件: { mcp_servers: { name: {...} } }
+   */
+  async clearMcpExcept(keepNames, { dryRun = false } = {}) {
+    const raw = this.readExistingConfig();
+    if (!raw) return [];
+    const config = tomlToJson(raw);
+    const servers = config.mcp_servers;
+    if (!servers || typeof servers !== 'object') return [];
+    const removed = [];
+    for (const name of Object.keys(servers)) {
+      if (!keepNames.has(name)) {
+        removed.push(name);
+        if (!dryRun) delete servers[name];
+      }
+    }
+    if (!dryRun && removed.length > 0) {
+      this.writeConfig(jsonToToml(config));
+    }
+    return removed;
+  }
+
+  /** 删除指定的 MCP 服务器条目（矩阵 'remove' 值） */
+  async deleteMcp(names, { dryRun = false } = {}) {
+    const raw = this.readExistingConfig();
+    if (!raw) return [];
+    const config = tomlToJson(raw);
+    const servers = config.mcp_servers;
+    if (!servers || typeof servers !== 'object') return [];
+    const removed = [];
+    for (const name of names) {
+      if (name in servers) {
+        removed.push(name);
+        if (!dryRun) delete servers[name];
+      }
+    }
+    if (!dryRun && removed.length > 0) {
+      this.writeConfig(jsonToToml(config));
+    }
+    return removed;
+  }
+
+  /**
+   * 读取 Codex 现有 MCP 服务器及启用状态（mcp_servers 表，每条含 enabled）
+   */
+  getMcpServers() {
+    const raw = this.readExistingConfig();
+    if (!raw) return [];
+    const config = tomlToJson(raw);
+    const servers = config.mcp_servers || {};
+    return Object.entries(servers).map(([name, cfg]) => ({
+      name,
+      enabled: cfg.enabled !== false,
+      config: cfg
+    }));
+  }
 }

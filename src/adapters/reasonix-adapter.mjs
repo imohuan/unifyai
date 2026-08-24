@@ -88,6 +88,20 @@ export class ReasonixAdapter extends BaseAdapter {
   }
 
   /**
+   * Reasonix MCP 配置格式待调查：与 syncMcp 一致，暂时跳过（不删除任何条目）
+   */
+  async clearMcpExcept(keepNames, { dryRun = false } = {}) {
+    console.log(`    ⚠ Reasonix MCP 配置格式待调查，force-mcp 重置暂时跳过`);
+    return [];
+  }
+
+  /** Reasonix MCP 配置格式待调查：删除操作暂时跳过 */
+  async deleteMcp(names, { dryRun = false } = {}) {
+    console.log(`    ⚠ Reasonix MCP 配置格式待调查，删除暂时跳过`);
+    return [];
+  }
+
+  /**
    * 按 provider 分组模型
    */
   groupByProvider(models) {

@@ -17,13 +17,14 @@ Sync models and MCP server configurations from OpenCodex to multiple AI developm
 
 ## 📦 支持平台
 
-| 平台 | 模型同步 | MCP 同步 | 配置路径 |
-|------|---------|---------|----------|
-| OpenCode | ✓ | ✓ | `~/.config/opencode/opencode.json` |
-| Codex | ✗ | ✓ | `~/.config/codex/config.toml` |
-| Claude Code | ✗ | ✓ | `~/.config/claude/config.json` |
-| Reasonix | ✓ | ✓ | `~/.config/reasonix/config.json` |
-| PenguinHarness | ✓ | ✓ | 模型: `.project_config.toml`<br>MCP: `*/system_config.yaml` |
+| 平台             | 模型同步 | MCP 同步 | 配置路径                                                     |
+| -------------- | ---- | ------ | -------------------------------------------------------- |
+| OpenCode       | ✓    | ✓      | `~/.config/opencode/opencode.json`                       |
+| Codex          | ✗    | ✓      | `~/.config/codex/config.toml`                            |
+| Claude Code    | ✗    | ✓      | `~/.config/claude/config.json`                           |
+| Reasonix       | ✓    | ✓      | `~/.config/reasonix/config.json`                         |
+| PenguinHarness | ✓    | ✓      | 模型: `.project_config.toml`  
+MCP: `*/system_config.yaml` |
 
 ## 🚀 快速开始
 
@@ -89,6 +90,35 @@ node src/cli.mjs --mcp-exclude-for codex=node_env --mcp-exclude-for opencode=som
 # 组合使用：只同步 opencode 的 MCP，且排除 filesystem
 node src/cli.mjs --mcp-only --mcp-platforms opencode --mcp-exclude filesystem
 
+# 列出源 mcp.json 及各平台现有的 MCP 服务器与开关状态
+node src/cli.mjs --list-mcp
+node src/cli.mjs --list-mcp --json
+node src/cli.mjs --list-mcp --platforms opencode
+
+# 切换某平台某 MCP 服务器的开关（翻转源 mcp.json 的 enabled 并同步该平台）
+node src/cli.mjs --mcp-toggle opencode=codegraph
+
+# 合并各平台 MCP 配置到源 mcp.json（同名保留源配置；配合 --list-mcp 显示全集）
+node src/cli.mjs --import-mcp
+node src/cli.mjs --import-mcp --dry-run   # 预览不写入
+
+# 批量同步矩阵：一次把勾选状态落地到各平台（true=开启/添加，false=关闭/移除）
+# 矩阵不短路：mode=all 时模型照常同步，MCP 改用矩阵驱动
+node src/cli.mjs --config '{"mode":"all","mcp":{"matrix":{"opencode":{"context7":true},"codex":{"context7":false}}}}'
+
+# 统一查询入口：一次列出多种配置（platforms/models/mcp/metadata，全部支持 --json）
+node src/cli.mjs --list platforms,mcp --json
+node src/cli.mjs --list all --json
+node src/cli.mjs --list metadata    # 更新 OpenRouter 元数据缓存并显示状态
+
+# JSON 配置驱动同步（替代多个同步 flag；JSON 字符串或文件路径均可）
+node src/cli.mjs --config '{"mode":"mcp","platforms":["opencode"]}' --dry-run
+node src/cli.mjs --config sync.json
+node src/cli.mjs --config '{"mode":"all","mcp":{"matrix":{"opencode":{"context7":true}}}}'
+
+# 强制覆盖：目标平台不在同步列表的 MCP 服务器将被禁用/移除（配合同步命令）
+node src/cli.mjs --config '{"mcp":{"matrix":{...}},"force":true}'
+
 # 预览模式（不实际写入）
 node src/cli.mjs --dry-run
 
@@ -118,13 +148,17 @@ node src/cli.mjs --list-platforms --json
 ```
 
 **状态字段**（UI 徽章映射）：
+
 - `modelStatus` / `mcpStatus`: `'supported` → ✓ 绿 | `'not_supported` → ✗ 灰 | `'not_implemented` → ⚠ 黄
 
 ## 📖 命令行参数
 
 ```
 选项:
-  -V, --version              显示版本号
+  -v, --version              显示版本号
+  --list <kinds>             统一查询: platforms/models/mcp/metadata（逗号分隔，all=全部），支持 --json
+  --config <json|path>       用 JSON 配置驱动同步（字符串或文件路径），替代多个同步 flag；支持 --json
+  --force-mcp                强制重置 MCP：目标平台现有但不在本次同步列表的服务器全部禁用/移除
   --all                      同步到所有平台
   --platforms <list>         指定平台（逗号分隔，默认: opencode）
   --models-only              仅同步模型配置
@@ -135,10 +169,38 @@ node src/cli.mjs --list-platforms --json
   --dry-run                  预览模式，不实际写入
   --source <path>            源配置文件路径
   --list-platforms           列出支持的平台
-  --json                    与 --list-platforms 一起使用，输出 JSON 格式
+  --list-mcp                 列出源 mcp.json 及各平台现有的 MCP 服务器与开关状态（可与 --platforms / --json 组合）
+  --mcp-toggle <platform=server>  切换某平台某 MCP 服务器的开关（翻转源 mcp.json 的 enabled 并同步该平台）
+  --import-mcp               合并各平台 MCP 配置到源 mcp.json（同名保留源配置；--dry-run 预览不写入）
+  --mcp-matrix <json>        批量同步矩阵: {"platform":{"server":true/false}}（true=开启/添加，false=关闭/移除）
+  --json                     与各查询/同步命令一起使用，输出 JSON 格式
   --update-metadata          更新元数据缓存（从 OpenRouter 下载）
   -h, --help                 显示帮助信息
 ```
+
+### JSON 配置（--config）
+
+```json
+{
+  "mode": "all | models | mcp",
+  "all": false,
+  "platforms": ["opencode", "codex"],
+  "mcp": {
+    "matrix": { "opencode": { "context7": true } },
+    "platforms": ["opencode"],
+    "exclude": ["node_env"],
+    "excludeFor": { "codex": ["github"] }
+  },
+  "dryRun": false,
+  "source": "~/.opencodex/config.json",
+  "enableVision": false,
+  "force": false
+}
+```
+
+- `mcp.matrix` 存在时 MCP 改用矩阵驱动（勾选=开启/添加，未勾选不碰）；模型同步不受影响，仍按 `mode` 执行（`mcp` 模式不同步模型）
+- 无 `mcp.matrix` 时按 `mode` 走全量同步（模型 + MCP，含排除/白名单）
+- `forceMcp: true`（或命令行 `--force-mcp`）：强制重置——目标平台已有但不在本次同步列表的 MCP 服务器将被禁用（OpenCode/Codex）或移除（Claude/Penguin）
 
 ### MCP 同步过滤
 
@@ -149,6 +211,33 @@ node src/cli.mjs --list-platforms --json
 - **平台白名单**（只对指定平台同步 MCP）：`--mcp-platforms codex,opencode`
 
 过滤优先级：平台白名单 > 按平台排除 > 全局排除。被排除的服务器会打印 `⊘ 已排除` 提示。
+
+### MCP 开关（enabled）
+
+源 `mcp.json` 中每个服务器可通过 `enabled: true/false`（或兼容旧写法 `disabled: true`）控制开关：
+
+- **开启**（`enabled: true`）：同步到目标平台，正常启用
+- **关闭**（`enabled: false`）：配置仍保留在源中（可随时开启），同步时按平台能力落地：
+
+| 平台             | `enabled: false` 的落地方式                           |
+| -------------- | ------------------------------------------------ |
+| OpenCode       | 保留条目，写 `"enabled": false`                        |
+| Codex          | 保留条目，写 `enabled = false`（Codex 原生支持，false 时跳过启动） |
+| Claude Code    | 移除条目（Claude 不支持 enabled 字段）                      |
+| PenguinHarness | 移除条目（数组格式无 enabled 字段）                           |
+
+`--mcp-toggle <platform=server>` 可一键翻转源配置的 enabled 并同步到指定平台（只同步 MCP，不动模型）。  
+`--list-mcp` 可查看源配置与各平台当前的服务器列表及开关状态（`--json` 输出结构化结果供 UI 消费，`--platforms` 可限定平台）。
+
+### 矩阵工作流（UI 场景）
+
+UI 侧推荐三步流程（同步矩阵视图）：
+
+1. **`--import-mcp`**：把各平台已配置的 MCP 服务器合并进源 `mcp.json`（同名保留源配置，平台独有的如 context7/smart/filesystem 按平台配置转换追加）→ 源成为全集
+2. **`--list-mcp --json`**：前端读取源全集 + 各平台 enabled 状态，渲染勾选矩阵（行=去重服务器，列=平台，勾选=该平台开启）
+3. **`--mcp-matrix '<json>'`**：把勾选矩阵批量落地。开启但平台没有 → 从源/其他平台复制添加；关闭 → 支持 enabled 字段的平台写 `enabled:false`，不支持的（Claude/Penguin）移除条目
+
+命令行临时场景仍可用 `--mcp-exclude` / `--mcp-toggle`，与矩阵互不冲突。
 
 ## 📁 Project Structure
 
@@ -182,10 +271,12 @@ unifyai/
 ### 1. 配置加载
 
 **优先级顺序**：
-1. **OpenCodex 代理服务** (http://localhost:10100/models) - 实时获取模型列表
+
+1. **OpenCodex 代理服务** (<http://localhost:10100/models>) - 实时获取模型列表
 2. **配置文件** (`~/.opencodex/config.json`) - 回退方案
 
 从配置文件中读取：
+
 - `providers`: provider 配置（baseUrl, apiKey, adapter）
 - `customModels`: 自定义模型元数据
 - `mcp.mcpServers`: MCP 服务器配置
@@ -193,10 +284,12 @@ unifyai/
 ### 2. MCP 配置加载
 
 **配置路径优先级**：
+
 1. `./mcp.json`（当前工作目录）
 2. `~/.unifyai/mcp.json`（用户配置目录）
 
 **配置格式** (`mcp.json`):
+
 ```json
 {
   "mcpServers": {
@@ -222,11 +315,13 @@ unifyai/
 ### 3. 元数据增强
 
 为每个模型补全元数据（按优先级）：
+
 1. 自定义配置（customModels）
 2. OpenRouter API 缓存（410+ 模型）
 3. 默认值（200K context, 32K output）
 
 **OpenRouter 数据包含**：
+
 - ✅ context_length（上下文窗口）
 - ✅ max_completion_tokens（最大输出）
 - ✅ architecture.modality（是否支持 vision）
@@ -236,6 +331,7 @@ unifyai/
 ### 4. 平台适配
 
 #### OpenCode 适配器
+
 - **模型配置**：写入 `config.provider[providerKey]`
 - **MCP 配置**：写入 `config.mcp` (不是 `config.mcpServers`)
 - **格式**：
@@ -260,16 +356,19 @@ unifyai/
   ```
 
 #### Codex / Claude Code 适配器
+
 - **MCP 配置**：写入 `mcpServers` 顶层字段
 - **格式**：TOML (Codex) 或 JSON (Claude Code)
 
 #### Reasonix 适配器
+
 - **模型配置**：写入 `model.custom` 数组
 - **MCP 配置**：写入 `mcp.server` 数组
 
 ### 5. Variants 生成
 
 根据 OpenRouter 的 `reasoning` 字段和模型族自动生成 variants：
+
 - **GPT/O1/O3 系列**: `none | low | medium | high | xhigh | max`
 - **Claude 系列**: `low | medium | high | xhigh | max` (adaptive thinking)
 - **DeepSeek/GLM/Qwen 系列**: `on | off`
@@ -278,6 +377,7 @@ unifyai/
 ## 📊 OpenRouter 集成
 
 ### 缓存机制
+
 - **缓存位置**: `~/.unifyai/cache/openrouter-models.json`
 - **缓存时效**: 24 小时
 - **缓存大小**: ~410 个模型的元数据
@@ -299,6 +399,7 @@ node src/cli.mjs --fetch-metadata
 ### 模糊匹配
 
 支持多种模型名称格式：
+
 ```
 deepseek-v4-pro        → openai/deepseek-chat
 claude-opus-5          → anthropic/claude-3-opus-20240229
@@ -312,16 +413,13 @@ gpt-5.6-luna           → openai/o1-preview
 1. **修复 reasoning 字段 bug**
    - 将 `reasoning: false` 改为 `reasoning: null`
    - 避免 OpenCode 类型错误
-
 2. **优化配置加载**
-   - 优先从 OpenCodex 代理服务 (http://localhost:10100/models) 获取模型列表
+   - 优先从 OpenCodex 代理服务 (<http://localhost:10100/models>) 获取模型列表
    - 失败时自动回退到配置文件
-
 3. **修复 MCP 配置同步**
    - 正确处理 `config.mcp.mcpServers` 嵌套结构
    - 修复 OpenCode 适配器写入位置（`config.mcp` 而不是 `config.mcpServers`）
    - 支持本地和远程 MCP 服务器
-
 4. **改进 CLI 体验**
    - 添加详细的同步日志输出
    - 改进错误提示信息
@@ -342,8 +440,8 @@ gpt-5.6-luna           → openai/o1-preview
 
 ## 🐛 已知问题
 
-- Reasonix MCP 配置格式需要进一步测试
-- Claude Code 不支持 `enabled: false` 字段
+- Reasonix MCP 配置格式需要进一步测试（`--list-mcp` 显示"暂不支持读取"）
+- Claude Code / PenguinHarness 不支持 `enabled` 字段：关闭的服务器会被**移除条目**（而非保留禁用），重新开启需再运行一次同步
 
 ## 📄 许可证
 

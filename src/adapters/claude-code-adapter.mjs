@@ -76,4 +76,63 @@ export class ClaudeCodeAdapter extends BaseAdapter {
     // 写入配置
     this.writeConfig(JSON.stringify(config, null, 2));
   }
+
+  /**
+   * 删除 config.mcpServers 中不在 keepNames 里的条目（force-mcp 重置用）
+   * Claude 配置文件: { mcpServers: { name: {...} } }
+   */
+  async clearMcpExcept(keepNames, { dryRun = false } = {}) {
+    const raw = this.readExistingConfig();
+    if (!raw) return [];
+    const config = JSON.parse(raw);
+    const servers = config.mcpServers;
+    if (!servers || typeof servers !== 'object') return [];
+    const removed = [];
+    for (const name of Object.keys(servers)) {
+      if (!keepNames.has(name)) {
+        removed.push(name);
+        if (!dryRun) delete servers[name];
+      }
+    }
+    if (!dryRun && removed.length > 0) {
+      this.writeConfig(JSON.stringify(config, null, 2));
+    }
+    return removed;
+  }
+
+  /** 删除指定的 MCP 服务器条目（矩阵 'remove' 值） */
+  async deleteMcp(names, { dryRun = false } = {}) {
+    const raw = this.readExistingConfig();
+    if (!raw) return [];
+    const config = JSON.parse(raw);
+    const servers = config.mcpServers;
+    if (!servers || typeof servers !== 'object') return [];
+    const removed = [];
+    for (const name of names) {
+      if (name in servers) {
+        removed.push(name);
+        if (!dryRun) delete servers[name];
+      }
+    }
+    if (!dryRun && removed.length > 0) {
+      this.writeConfig(JSON.stringify(config, null, 2));
+    }
+    return removed;
+  }
+
+  /**
+   * 读取 Claude Code 现有 MCP 服务器及启用状态
+   * Claude 不支持 enabled 字段：存在即视为启用（关闭 = 条目被移除）
+   */
+  getMcpServers() {
+    const raw = this.readExistingConfig();
+    if (!raw) return [];
+    const config = JSON.parse(raw);
+    const servers = config.mcpServers || {};
+    return Object.entries(servers).map(([name, cfg]) => ({
+      name,
+      enabled: true,
+      config: cfg
+    }));
+  }
 }

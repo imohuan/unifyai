@@ -301,7 +301,25 @@ export class PenguinAdapter extends BaseAdapter {
           config.tools.mcpServers = [];
         }
 
-        // 创建名称到索引的映射（用于查找重复）
+        // 收集被禁用的服务器（Penguin 的 mcpServers 无 enabled 字段，关闭 = 移除条目）
+        const disabledNames = new Set();
+        for (const [name, server] of Object.entries(mcpServers)) {
+          if (server.enabled === false) disabledNames.add(name);
+        }
+
+        // 从数组中移除被禁用的服务器
+        if (disabledNames.size > 0) {
+          const before = config.tools.mcpServers.length;
+          config.tools.mcpServers = config.tools.mcpServers.filter(
+            s => !disabledNames.has(s.name)
+          );
+          const removed = before - config.tools.mcpServers.length;
+          if (removed > 0) {
+            console.log(`      - 移除(禁用): ${[...disabledNames].join(', ')}`);
+          }
+        }
+
+        // 重建名称到索引的映射（用于查找重复）
         const existingServers = new Map();
         config.tools.mcpServers.forEach((server, index) => {
           existingServers.set(server.name, index);
@@ -309,6 +327,8 @@ export class PenguinAdapter extends BaseAdapter {
 
         // 转换 MCP 配置到 PenguinHarness 格式（增量添加/更新）
         for (const [name, server] of Object.entries(mcpServers)) {
+          if (disabledNames.has(name)) continue; // 禁用的不写入
+
           const isRemote = server.transport === 'streamable-http' || server.transport === 'sse' || !!server.url;
 
           const mcpConfig = {
@@ -365,8 +385,9 @@ export class PenguinAdapter extends BaseAdapter {
 
         fs.writeFileSync(configPath, newYamlContent, 'utf-8');
         
-        const added = Object.keys(mcpServers).filter(name => !existingServers.has(name)).length;
-        const updated = Object.keys(mcpServers).filter(name => existingServers.has(name)).length;
+        const activeNames = Object.keys(mcpServers).filter(n => !disabledNames.has(n));
+        const added = activeNames.filter(name => !existingServers.has(name)).length;
+        const updated = activeNames.filter(name => existingServers.has(name)).length;
         console.log(`      ✓ 完成: 新增 ${added} 个, 更新 ${updated} 个`);
         successCount++;
 
@@ -377,6 +398,98 @@ export class PenguinAdapter extends BaseAdapter {
     }
 
     console.log(`    完成: ${successCount} 成功, ${failCount} 失败`);
+  }
+
+  /**
+   * 删除 tools.mcpServers 数组中不在 keepNames 里的条目（force-mcp 重置用）
+   * Penguin 配置文件: tools.mcpServers 数组（每个元素含 name 字段）
+   * 遍历所有 system_config.yaml 统一处理
+   */
+  async clearMcpExcept(keepNames, { dryRun = false } = {}) {
+    const dataDir = path.join(os.homedir(), '.penguin', 'data');
+    if (!fs.existsSync(dataDir)) return [];
+    const configFiles = this.findSystemConfigs(dataDir);
+    const removedSet = new Set();
+    for (const configPath of configFiles) {
+      try {
+        const yamlContent = fs.readFileSync(configPath, 'utf-8');
+        const config = yaml.load(yamlContent);
+        const arr = config?.tools?.mcpServers;
+        if (!Array.isArray(arr)) continue;
+        const kept = arr.filter(s => s && keepNames.has(s.name));
+        const removedHere = arr.filter(s => s && !keepNames.has(s.name));
+        if (removedHere.length > 0) {
+          for (const s of removedHere) {
+            if (s?.name) removedSet.add(s.name);
+          }
+          if (!dryRun) {
+            config.tools.mcpServers = kept;
+            fs.writeFileSync(configPath, yaml.dump(config, { indent: 2, lineWidth: 80, noRefs: true, sortKeys: false }), 'utf-8');
+          }
+        }
+      } catch (e) {
+        console.warn(`      ⚠ ${path.basename(configPath)}: ${e.message}`);
+      }
+    }
+    return [...removedSet];
+  }
+
+  /** 删除指定的 MCP 服务器条目（矩阵 'remove' 值）——跨所有 system_config.yaml */
+  async deleteMcp(names, { dryRun = false } = {}) {
+    const dataDir = path.join(os.homedir(), '.penguin', 'data');
+    if (!fs.existsSync(dataDir)) return [];
+    const deleteSet = new Set(names);
+    const configFiles = this.findSystemConfigs(dataDir);
+    const removedSet = new Set();
+    for (const configPath of configFiles) {
+      try {
+        const yamlContent = fs.readFileSync(configPath, 'utf-8');
+        const config = yaml.load(yamlContent);
+        const arr = config?.tools?.mcpServers;
+        if (!Array.isArray(arr)) continue;
+        const before = arr.length;
+        const kept = arr.filter(s => s && !deleteSet.has(s.name));
+        const removedHere = before - kept.length;
+        if (removedHere > 0) {
+          for (const s of arr) {
+            if (s?.name && deleteSet.has(s.name)) removedSet.add(s.name);
+          }
+          if (!dryRun) {
+            config.tools.mcpServers = kept;
+            fs.writeFileSync(configPath, yaml.dump(config, { indent: 2, lineWidth: 80, noRefs: true, sortKeys: false }), 'utf-8');
+          }
+        }
+      } catch (e) {
+        console.warn(`      ⚠ ${path.basename(configPath)}: ${e.message}`);
+      }
+    }
+    return [...removedSet];
+  }
+
+  /**
+   * 读取 PenguinHarness 现有 MCP 服务器
+   * tools.mcpServers 数组无 enabled 字段：条目存在即视为启用
+   * 多个 system_config.yaml 的结果按名称去重合并
+   */
+  getMcpServers() {
+    const dataDir = path.join(os.homedir(), '.penguin', 'data');
+    if (!fs.existsSync(dataDir)) return [];
+
+    const seen = new Map();
+    for (const configPath of this.findSystemConfigs(dataDir)) {
+      try {
+        const config = yaml.load(fs.readFileSync(configPath, 'utf-8'));
+        const servers = config?.tools?.mcpServers || [];
+        for (const s of servers) {
+          if (s && s.name && !seen.has(s.name)) {
+            seen.set(s.name, { name: s.name, enabled: true, config: s });
+          }
+        }
+      } catch {
+        // 单个文件解析失败不影响其他文件
+      }
+    }
+    return [...seen.values()];
   }
 
   /**

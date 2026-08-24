@@ -68,11 +68,25 @@ export class ConfigLoader {
         Object.entries(providers).filter(([, cfg]) => !cfg.disabled).map(([n]) => n)
       );
       const beforeFilter = models.length;
+      const removedByProvider = models.filter(m => !enabledProviderNames.has(m.provider));
       models = models.filter(m => enabledProviderNames.has(m.provider));
-      models = this.filterDisabledModels(models, disabledModels);
+      const removedByDisabled = this.filterDisabledModels(models, disabledModels, { collect: true });
+      models = removedByDisabled.kept;
       const removed = beforeFilter - models.length;
-      if (removed > 0) {
-        console.log(`  ⊘ 过滤 disabled provider / disabledModels: ${removed} 个模型`);
+      if (removedByProvider.length > 0) {
+        console.log(`  ⊘ 过滤 disabled provider: ${removedByProvider.length} 个模型`);
+        for (const m of removedByProvider) {
+          console.log(`     「${m.provider}/${m.modelId}」 (provider ${m.provider} 已禁用)`);
+        }
+      }
+      if (removedByDisabled.removed.length > 0) {
+        console.log(`  ⊘ 过滤 disabledModels (config.json 的 disabledModels 配置): ${removedByDisabled.removed.length} 个模型`);
+        for (const n of removedByDisabled.removed) {
+          console.log(`     「${n}」`);
+        }
+      }
+      if (removed > 0 && removedByProvider.length === 0 && removedByDisabled.removed.length === 0) {
+        console.log(`  ⊘ 过滤: ${removed} 个模型`);
       }
     } else {
       console.log(`\n⚠ OpenCodex 代理服务不可用，降级到逐个 provider 获取`);
@@ -81,9 +95,11 @@ export class ConfigLoader {
       const enabledProviders = Object.entries(providers).filter(
         ([name, cfg]) => !cfg.disabled
       );
-      const skippedDisabled = Object.keys(providers).length - enabledProviders.length;
-      if (skippedDisabled > 0) {
-        console.log(`  ⊘ 跳过 ${skippedDisabled} 个 disabled provider: ${enabledProviders.map(([n]) => n).join(', ') || '(无)'}`);
+      const disabledProviders = Object.entries(providers).filter(
+        ([name, cfg]) => cfg.disabled
+      );
+      if (disabledProviders.length > 0) {
+        console.log(`  ⊘ 跳过 ${disabledProviders.length} 个 disabled provider: ${disabledProviders.map(([n]) => n).join(', ')}`);
       }
 
       for (const [providerName, providerConfig] of enabledProviders) {
@@ -93,13 +109,14 @@ export class ConfigLoader {
         
         if (providerModels.length > 0) {
           // 过滤该 provider 下 disabledModels 中的模型
-          const filtered = this.filterDisabledModels(providerModels, disabledModels);
-          const removed = providerModels.length - filtered.length;
+          const filtered = this.filterDisabledModels(providerModels, disabledModels, { collect: true });
+          const removed = providerModels.length - filtered.kept.length;
           if (removed > 0) {
-            console.log(`  ⊘ 过滤 disabledModels: ${removed} 个模型`);
+            console.log(`  ⊘ 过滤 disabledModels (config.json 的 disabledModels 配置): ${removed} 个模型`);
+            console.log(`     ${filtered.removed.map(n => `「${n}」`).join(', ')}`);
           }
-          console.log(`  ✓ 获取到 ${filtered.length} 个模型`);
-          models.push(...filtered);
+          console.log(`  ✓ 获取到 ${filtered.kept.length} 个模型`);
+          models.push(...filtered.kept);
         } else {
           console.warn(`  ⚠ ${providerName} 没有返回模型`);
         }
@@ -154,20 +171,19 @@ export class ConfigLoader {
         return {};
       }
 
-      // 过滤掉 disabled 的服务器
-      const enabledServers = {};
-      for (const [name, config] of Object.entries(mcpConfig.mcpServers)) {
-        if (!config.disabled) {
-          enabledServers[name] = config;
-        }
-      }
+      // 保留全部服务器。enabled/disabled 状态不在此过滤，而是交给
+      // normalizeMcp() 统一转成 enabled 布尔字段，再由各平台适配器落地：
+      //   支持 enabled 字段的平台（OpenCode/Codex）→ 写 enabled=false 保留条目
+      //   不支持的平台（Claude Code/Penguin）→ 从目标配置中移除条目
+      const servers = mcpConfig.mcpServers;
+      const total = Object.keys(servers).length;
+      const disabledCount = Object.values(servers).filter(
+        s => s && (s.enabled === false || s.disabled === true)
+      ).length;
 
-      const total = Object.keys(mcpConfig.mcpServers).length;
-      const enabled = Object.keys(enabledServers).length;
-      
-      console.log(`\n✓ MCP 配置 (来自 ${source}): ${enabled}/${total} 个服务器启用`);
-      
-      return { mcpServers: enabledServers };
+      console.log(`\n✓ MCP 配置 (来自 ${source}): ${total} 个服务器（${disabledCount} 个禁用）`);
+
+      return { mcpServers: servers };
     } catch (error) {
       console.warn(`⚠ 加载 ${mcpPath} 失败: ${error.message}`);
       return {};
@@ -228,11 +244,25 @@ export class ConfigLoader {
         Object.entries(providers).filter(([, cfg]) => !cfg.disabled).map(([n]) => n)
       );
       const beforeFilter = models.length;
+      const removedByProvider = models.filter(m => !enabledProviderNames.has(m.provider));
       models = models.filter(m => enabledProviderNames.has(m.provider));
-      models = this.filterDisabledModels(models, disabledModels);
+      const removedByDisabled = this.filterDisabledModels(models, disabledModels, { collect: true });
+      models = removedByDisabled.kept;
       const removed = beforeFilter - models.length;
-      if (removed > 0) {
-        log(`  ⊘ 过滤 disabled provider / disabledModels: ${removed} 个模型`);
+      if (removedByProvider.length > 0) {
+        log(`  ⊘ 过滤 disabled provider: ${removedByProvider.length} 个模型`);
+        for (const m of removedByProvider) {
+          log(`     「${m.provider}/${m.modelId}」 (provider ${m.provider} 已禁用)`);
+        }
+      }
+      if (removedByDisabled.removed.length > 0) {
+        log(`  ⊘ 过滤 disabledModels (config.json 的 disabledModels 配置): ${removedByDisabled.removed.length} 个模型`);
+        for (const n of removedByDisabled.removed) {
+          log(`     「${n}」`);
+        }
+      }
+      if (removed > 0 && removedByProvider.length === 0 && removedByDisabled.removed.length === 0) {
+        log(`  ⊘ 过滤: ${removed} 个模型`);
       }
     } else {
       degraded = true;
@@ -385,17 +415,24 @@ export class ConfigLoader {
    * @param {Array} disabledModels - 裸名数组
    * @returns {Array}
    */
-  static filterDisabledModels(models, disabledModels) {
-    if (!Array.isArray(disabledModels) || disabledModels.length === 0) return models;
+  static filterDisabledModels(models, disabledModels, { collect = false } = {}) {
+    if (!Array.isArray(disabledModels) || disabledModels.length === 0) {
+      return collect ? { kept: models, removed: [] } : models;
+    }
     // 构造匹配集合（裸名）
     const disabledSet = new Set(disabledModels);
-    return models.filter(m => {
+    const kept = [];
+    const removed = [];
+    for (const m of models) {
       // 裸名直接命中（如 gpt-5.5）
-      if (disabledSet.has(m.modelId)) return false;
       // provider/模型名 命中（如 IMOHUAN/deepseek-v4-flash）
-      if (disabledSet.has(`${m.provider}/${m.modelId}`)) return false;
-      return true;
-    });
+      if (disabledSet.has(m.modelId) || disabledSet.has(`${m.provider}/${m.modelId}`)) {
+        removed.push(m.modelId);
+        continue;
+      }
+      kept.push(m);
+    }
+    return collect ? { kept, removed } : kept;
   }
 
   /**
@@ -470,7 +507,8 @@ export class ConfigLoader {
 
       servers[name] = {
         name,
-        enabled: server.enabled !== false,
+        // 统一两种写法：enabled: false 与 disabled: true 都视为禁用
+        enabled: server.enabled !== false && server.disabled !== true,
         transport: isRemote ? (server.transport || 'streamable-http') : 'stdio',
         // 本地服务器
         command: isRemote ? null : (Array.isArray(server.command) ? server.command[0] : server.command),

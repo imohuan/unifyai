@@ -48,6 +48,15 @@ export class BaseAdapter {
   }
 
   /**
+   * 读取目标平台现有的 MCP 服务器列表及启用状态（供 --list-mcp 使用）
+   * 默认未实现返回 null（表示该平台暂不支持读取），支持读取的平台覆写
+   * @returns {Array<{name: string, enabled: boolean}>|null}
+   */
+  getMcpServers() {
+    return null;
+  }
+
+  /**
    * 获取配置文件路径
    * @returns {string}
    */
@@ -77,6 +86,28 @@ export class BaseAdapter {
       return;
     }
     throw new Error(`${this.platformName}: Must implement syncMcp()`);
+  }
+
+  /**
+   * 删除目标平台 MCP 集合中不在 keepNames 列表里的条目（force-mcp 重置用）
+   * @param {Set<string>} keepNames - 要保留的服务器名集合
+   * @param {Object} [opts] - { dryRun: true 仅打印计划不写入 }
+   * @returns {string[]} 被删除的服务器名列表
+   */
+  async clearMcpExcept(keepNames, { dryRun = false } = {}) {
+    if (!this.supportsMcp) return [];
+    throw new Error(`${this.platformName}: Must implement clearMcpExcept()`);
+  }
+
+  /**
+   * 删除目标平台 MCP 集合中指定的条目（矩阵 'remove' 值用）
+   * @param {string[]} names - 要删除的服务器名
+   * @param {Object} [opts] - { dryRun: true 仅打印计划不写入 }
+   * @returns {string[]} 实际删除的服务器名列表
+   */
+  async deleteMcp(names, { dryRun = false } = {}) {
+    if (!this.supportsMcp) return [];
+    throw new Error(`${this.platformName}: Must implement deleteMcp()`);
   }
 
   /**

@@ -131,6 +131,64 @@ export class OpenCodeAdapter extends BaseAdapter {
   }
 
   /**
+   * 删除 config.mcp 中不在 keepNames 里的条目（force-mcp 重置用）
+   * OpenCode 配置文件: { "$schema": ..., "mcp": { name: {...} } }
+   */
+  async clearMcpExcept(keepNames, { dryRun = false } = {}) {
+    const raw = this.readExistingConfig();
+    if (!raw) return [];
+    const config = this.parseJsonc(raw);
+    const mcp = config.mcp;
+    if (!mcp || typeof mcp !== 'object') return [];
+    const removed = [];
+    for (const name of Object.keys(mcp)) {
+      if (!keepNames.has(name)) {
+        removed.push(name);
+        if (!dryRun) delete mcp[name];
+      }
+    }
+    if (!dryRun && removed.length > 0) {
+      this.writeConfig(JSON.stringify(config, null, 2));
+    }
+    return removed;
+  }
+
+  /** 删除指定的 MCP 服务器条目（矩阵 'remove' 值） */
+  async deleteMcp(names, { dryRun = false } = {}) {
+    const raw = this.readExistingConfig();
+    if (!raw) return [];
+    const config = this.parseJsonc(raw);
+    const mcp = config.mcp;
+    if (!mcp || typeof mcp !== 'object') return [];
+    const removed = [];
+    for (const name of names) {
+      if (name in mcp) {
+        removed.push(name);
+        if (!dryRun) delete mcp[name];
+      }
+    }
+    if (!dryRun && removed.length > 0) {
+      this.writeConfig(JSON.stringify(config, null, 2));
+    }
+    return removed;
+  }
+
+  /**
+   * 读取 OpenCode 现有 MCP 服务器及启用状态（config.mcp 对象，每条含 enabled）
+   */
+  getMcpServers() {
+    const raw = this.readExistingConfig();
+    if (!raw) return [];
+    const config = this.parseJsonc(raw);
+    const mcp = config.mcp || {};
+    return Object.entries(mcp).map(([name, cfg]) => ({
+      name,
+      enabled: cfg.enabled !== false,
+      config: cfg
+    }));
+  }
+
+  /**
    * 按 SDK 分组模型
    * 同一个 provider 的不同 SDK 模型会被分到不同组
    */
