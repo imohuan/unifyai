@@ -2,6 +2,10 @@
 mcp.json
 .cache/
 
+# Internal tooling & workspace data (excluded from git too)
+.codegraph/
+.workbuddy/
+
 # Development files
 *.log
 *.bak
