@@ -124,6 +124,18 @@ function platformConfigToUnified(platformId, cfg) {
       env: c.env || {}
     };
   }
+  if (platformId === 'reasonix') {
+    const isRemote = cfg.type === 'http' || cfg.type === 'sse' || !!cfg.url;
+    return {
+      enabled,
+      transport: cfg.type === 'sse' ? 'sse' : (isRemote ? 'streamable-http' : 'stdio'),
+      command: isRemote ? null : cfg.command,
+      args: isRemote ? null : (cfg.args || []),
+      url: cfg.url || null,
+      bearerToken: extractBearer(cfg.headers),
+      env: cfg.env || {}
+    };
+  }
   if (platformId === 'workbuddy') {
     const isRemote = cfg.type === 'streamableHttp' || cfg.type === 'sse' || !!cfg.url;
     return {
