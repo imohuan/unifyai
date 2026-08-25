@@ -79,7 +79,7 @@ export class WorkBuddyAdapter extends BaseAdapter {
           apiKey: model.providerConfig.apiKey || '',
           supportsToolCall: model.supportsToolCall ?? true,
           supportsImages: model.supportsVision ?? false,
-          supportsReasoning: model.supportsReasoning ?? false,
+          supportsReasoning: model.supportsThinking ?? false,
           useCustomProtocol: false
         };
 
@@ -91,11 +91,11 @@ export class WorkBuddyAdapter extends BaseAdapter {
           item.maxOutputTokens = model.maxOutputTokens;
         }
 
-        // 如果有推理配置，添加完整的 reasoning 字段
-        if (model.reasoning) {
+        // 如果支持推理，添加完整的 reasoning 配置
+        if (model.supportsThinking) {
           item.reasoning = {
-            defaultEffort: model.reasoning.defaultEffort || 'high',
-            supportedEfforts: model.reasoning.supportedEfforts || ['high', 'max']
+            defaultEffort: model.reasoning?.defaultEffort || 'high',
+            supportedEfforts: model.reasoning?.supportedEfforts || ['high', 'max']
           };
         }
 
