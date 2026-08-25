@@ -83,7 +83,15 @@ export class WorkBuddyAdapter extends BaseAdapter {
           useCustomProtocol: false
         };
 
-        // 如果有推理配置，添加 reasoning 字段
+        // 添加最大输入/输出 token 数
+        if (model.contextWindow) {
+          item.maxInputTokens = model.contextWindow;
+        }
+        if (model.maxOutputTokens) {
+          item.maxOutputTokens = model.maxOutputTokens;
+        }
+
+        // 如果有推理配置，添加完整的 reasoning 字段
         if (model.reasoning) {
           item.reasoning = {
             defaultEffort: model.reasoning.defaultEffort || 'high',
