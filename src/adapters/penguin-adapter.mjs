@@ -24,18 +24,80 @@ export class PenguinAdapter extends BaseAdapter {
   }
 
   getConfigPath() {
-    // 使用 ~ 下的 .penguin 目录
+    // 使用 ~ 下的 .penguin 目录（仅用于兼容性，实际同步时会找所有项目）
     return path.join(os.homedir(), '.penguin', 'data', 'default_project', '.project_config.toml');
   }
 
   /**
-   * 同步模型配置
+   * 查找所有项目的 .project_config.toml 文件
+   */
+  findProjectConfigs() {
+    const dataDir = path.join(os.homedir(), '.penguin', 'data');
+    const results = [];
+
+    if (!fs.existsSync(dataDir)) {
+      return results;
+    }
+
+    try {
+      const entries = fs.readdirSync(dataDir, { withFileTypes: true });
+
+      for (const entry of entries) {
+        if (entry.isDirectory()) {
+          const configPath = path.join(dataDir, entry.name, '.project_config.toml');
+          if (fs.existsSync(configPath)) {
+            results.push(configPath);
+          }
+        }
+      }
+    } catch (error) {
+      console.warn(`    ⚠ 读取项目目录失败: ${error.message}`);
+    }
+
+    return results;
+  }
+
+  /**
+   * 同步模型配置到所有项目
    * PenguinHarness 使用 TOML 格式，包含：
    * - default_model: 默认模型配置
    * - [[models]]: 模型数组
    */
   async syncModels(models) {
-    const raw = this.readExistingConfig();
+    const projectConfigs = this.findProjectConfigs();
+
+    if (projectConfigs.length === 0) {
+      console.warn('    ⚠ 未找到任何项目配置文件');
+      return;
+    }
+
+    console.log(`    找到 ${projectConfigs.length} 个项目配置文件`);
+
+    let successCount = 0;
+    let failCount = 0;
+
+    for (const configPath of projectConfigs) {
+      try {
+        const projectName = path.basename(path.dirname(configPath));
+        console.log(`    → 更新项目: ${projectName}`);
+
+        this.syncProjectModels(configPath, models);
+        console.log(`      ✓ 写入 ${models.length} 个模型配置`);
+        successCount++;
+      } catch (error) {
+        console.error(`      ✗ 更新失败: ${error.message}`);
+        failCount++;
+      }
+    }
+
+    console.log(`    完成: ${successCount} 成功, ${failCount} 失败`);
+  }
+
+  /**
+   * 同步单个项目的模型配置
+   */
+  syncProjectModels(configPath, models) {
+    const raw = fs.readFileSync(configPath, 'utf-8');
     if (!raw) {
       throw new Error('配置文件不存在');
     }
@@ -113,10 +175,8 @@ export class PenguinAdapter extends BaseAdapter {
       }
     }
 
-    // 写入配置
-    this.writeConfig(newLines.join('\n'));
-    
-    console.log(`    写入 ${models.length} 个模型配置`);
+    // 写入配置到指定路径
+    fs.writeFileSync(configPath, newLines.join('\n'), 'utf-8');
   }
 
   /**

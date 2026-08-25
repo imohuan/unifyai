@@ -122,9 +122,10 @@ export class BaseAdapter {
     const { modelsOnly = false, mcpOnly = false } = options;
 
     console.log(`\n📦 同步到 ${this.platformName}...`);
-
-    // 检查配置文件是否存在
+    // 输出完整的配置地址详情
     const configPath = this.getConfigPath();
+    console.log(`  📍 配置文件完整路径: ${configPath}`);
+
     const exists = fs.existsSync(configPath);
 
     if (!exists) {
