@@ -21,6 +21,7 @@ const require = createRequire(import.meta.url);
 const pkg = require('../package.json');
 import { ReasonixAdapter } from './adapters/reasonix-adapter.mjs';
 import { PenguinAdapter } from './adapters/penguin-adapter.mjs';
+import { WorkBuddyAdapter } from './adapters/workbuddy-adapter.mjs';
 
 // 可用的适配器
 const ADAPTERS = {
@@ -28,7 +29,8 @@ const ADAPTERS = {
   codex: CodexAdapter,
   claudecode: ClaudeCodeAdapter,
   reasonix: ReasonixAdapter,
-  penguin: PenguinAdapter
+  penguin: PenguinAdapter,
+  workbuddy: WorkBuddyAdapter
 };
 
 const program = new Command();
@@ -120,6 +122,18 @@ function platformConfigToUnified(platformId, cfg) {
       url: c.url || null,
       bearerToken: extractBearer(c.headers),
       env: c.env || {}
+    };
+  }
+  if (platformId === 'workbuddy') {
+    const isRemote = cfg.type === 'streamableHttp' || cfg.type === 'sse' || !!cfg.url;
+    return {
+      enabled,
+      transport: cfg.type === 'sse' ? 'sse' : (isRemote ? 'streamable-http' : 'stdio'),
+      command: isRemote ? null : cfg.command,
+      args: isRemote ? null : (cfg.args || []),
+      url: cfg.url || null,
+      bearerToken: extractBearer(cfg.headers),
+      env: cfg.env || {}
     };
   }
   return null;
